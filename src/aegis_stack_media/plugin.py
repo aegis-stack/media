@@ -32,10 +32,11 @@ Design notes:
   agent. Tracked as a framework issue, not shipped broken here.
 """
 
+from typing import Any
+
 from aegis.core.file_manifest import FileManifest
 from aegis.core.migration_spec import MigrationSpec
 from aegis.core.plugins.spec import (
-    AgentToolWiring,
     HealthCheckWiring,
     OverseerPageWiring,
     PartCategory,
@@ -45,6 +46,24 @@ from aegis.core.plugins.spec import (
     ReadmeWiring,
     RouterWiring,
 )
+
+try:  # aegis-stack >= 0.17.0 (framework #1868)
+    from aegis.core.plugins.spec import AgentToolWiring as _AgentToolWiring
+except ImportError:  # pragma: no cover - older CLI, refused by aegis_version
+    _AgentToolWiring = None
+
+
+def _agent_tools() -> list[Any]:
+    """The tool grant, where the framework can carry it.
+
+    Guarded rather than imported at module top: an older ``aegis`` must be
+    able to load this spec, or ``aegis_version`` never gets to explain the
+    version it needs — it would be an ImportError from discovery instead.
+    """
+    if _AgentToolWiring is None:
+        return []
+    return [_AgentToolWiring("media", effect="writes")]
+
 
 HEALTH_LABEL = "media"
 """What the health check reports under, the Overseer entry it is the page
@@ -85,10 +104,12 @@ def get_spec() -> PluginSpec:
         health_name=HEALTH_LABEL,
         version="0.1.0",
         verified=False,
-        # 0.16.1 is the framework that reads ``overseer_pages`` and gates a
-        # plugin's ``extras``; 0.16.0 runs a plugin's queue as its own
-        # ``worker-<queue>`` container.
-        aegis_version=">=0.16.1",
+        # 0.17.0 carries ``AgentToolWiring`` (framework #1868), which the
+        # tool grant below needs to exist at all; 0.16.1 is the floor for
+        # everything else (``overseer_pages``, gated ``extras``), so a tool
+        # declaration on an older CLI is the version that rules it out, not
+        # an ImportError.
+        aegis_version=">=0.17.0",
         # The verb people type in this project's CLI, decoupled from the
         # install identifier (``media`` here, but the two may differ).
         cli_name="media",
@@ -133,7 +154,7 @@ def get_spec() -> PluginSpec:
             # One tool, and the effect it has: declaring it here is what grants
             # it to the chat agent and the MCP server. Its module is
             # app/services/media/tools.py, found by convention.
-            agent_tools=[AgentToolWiring("media", effect="writes")],
+            agent_tools=_agent_tools(),
             routers=[
                 # The page's own verbs (upload, start, poll). Its own prefix,
                 # and the Overseer gate on the router, since it is not mounted
