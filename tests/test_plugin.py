@@ -16,6 +16,13 @@ from aegis.core.plugins.spec import PluginKind, PluginSpec
 
 from aegis_stack_media.plugin import get_spec
 
+try:  # the wiring, and the field it travels in (aegis-stack #1868)
+    from aegis.core.plugins.spec import AgentToolWiring  # noqa: F401
+
+    HAS_AGENT_TOOLS = True
+except ImportError:  # pragma: no cover - a framework that predates the grant
+    HAS_AGENT_TOOLS = False
+
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 TEMPLATES = (
     Path(__file__).resolve().parents[1]
@@ -70,6 +77,10 @@ def test_ffmpeg_is_a_pip_dependency_not_an_apt_line() -> None:
     assert all("ffmpeg " not in dep or "imageio" in dep for dep in spec.pyproject_deps)
 
 
+@pytest.mark.skipif(
+    not HAS_AGENT_TOOLS,
+    reason="framework predates agent_tools (aegis-stack #1868)",
+)
 def test_the_agent_surface_declares_its_effect() -> None:
     """The tool ships, and the spec says what it does: declaring it is what
     grants it to the chat agent and the MCP server, and what lets the

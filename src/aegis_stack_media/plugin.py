@@ -53,16 +53,18 @@ except ImportError:  # pragma: no cover - older CLI, refused by aegis_version
     _AgentToolWiring = None
 
 
-def _agent_tools() -> list[Any]:
-    """The tool grant, where the framework can carry it.
+def _agent_tool_kwargs() -> dict[str, Any]:
+    """``agent_tools=[...]`` where the framework can carry it, else nothing.
 
-    Guarded rather than imported at module top: an older ``aegis`` must be
-    able to load this spec, or ``aegis_version`` never gets to explain the
-    version it needs — it would be an ImportError from discovery instead.
+    Both halves are guarded — the import and the keyword: an older
+    ``aegis`` has no ``AgentToolWiring`` *and* no ``PluginWiring.agent_tools``
+    field, so passing an empty list would still be an unexpected keyword.
+    Without this the plugin dies in discovery, before ``aegis_version`` can
+    say which release it needs.
     """
     if _AgentToolWiring is None:
-        return []
-    return [_AgentToolWiring("media", effect="writes")]
+        return {}
+    return {"agent_tools": [_AgentToolWiring("media", effect="writes")]}
 
 
 HEALTH_LABEL = "media"
@@ -153,8 +155,9 @@ def get_spec() -> PluginSpec:
         wiring=PluginWiring(
             # One tool, and the effect it has: declaring it here is what grants
             # it to the chat agent and the MCP server. Its module is
-            # app/services/media/tools.py, found by convention.
-            agent_tools=_agent_tools(),
+            # app/services/media/tools.py, found by convention. Omitted
+            # entirely on a framework that predates the field.
+            **_agent_tool_kwargs(),
             routers=[
                 # The page's own verbs (upload, start, poll). Its own prefix,
                 # and the Overseer gate on the router, since it is not mounted
