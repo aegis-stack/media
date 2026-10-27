@@ -1,0 +1,15 @@
+{# The conversions this project has run, newest first: the profile, how big
+   the source and the result were, and a link straight to the bucket. The
+   newest one is pinned above the table and polls itself until it lands. #}
+{% from "components/macros/table.html" import data_table %}
+{% if job %}<div class="mb-4">{% include "pages/overseer/media/_job.html" %}</div>{% endif %}
+{{ data_table(
+     [{"key": "id", "label": "Id", "kind": "int", "align": "right"},
+      {"key": "profile", "label": "Profile", "kind": "code"},
+      {"key": "status", "label": "Status", "kind": "status"},
+      {"key": "source", "label": "In", "align": "right"},
+      {"key": "output", "label": "Out", "align": "right"},
+      {"key": "result", "label": "Result", "kind": "link"},
+      {"key": "when", "label": "When"}],
+     rows,
+     empty="Nothing converted yet. Start one on the Convert section.") }}

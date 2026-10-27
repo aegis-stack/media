@@ -1,0 +1,16 @@
+{# One conversion, as a strip: what was asked for, how it went, and the size
+   it came back at. While it is queued or running it re-asks for itself
+   every two seconds; once it has landed it stops, because a result does not
+   change. #}
+{% from "components/macros/layout.html" import badge %}
+<div id="media-job-{{ job.id }}"
+     {% if running %}hx-get="{{ partials }}/jobs/{{ job.id }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}
+     class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-aegis-border bg-aegis-card px-5 py-4 text-sm">
+  <span class="text-aegis-muted">Job</span>
+  <span class="font-mono text-xs text-aegis-text">#{{ job.id }}</span>
+  <span class="font-mono text-xs text-aegis-text">{{ job.profile }}</span>
+  {{ badge(status.label, status.tone) }}
+  <span class="text-aegis-muted">{{ source }} in{% if output %} - {{ output }} out{% endif %}</span>
+  <span class="text-aegis-muted">{{ when }}</span>
+  {% if job.error %}<span class="text-error break-words">{{ job.error }}</span>{% endif %}
+</div>

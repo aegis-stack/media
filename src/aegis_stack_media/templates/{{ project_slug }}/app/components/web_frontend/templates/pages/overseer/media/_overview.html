@@ -1,0 +1,24 @@
+{# What this project can make, and what it has made: the profiles the
+   plugin ships (a project adds one by editing ``profiles.yml``) and the
+   counts of what each was used for. #}
+{# The macro is aliased: the context calls its own list ``figures`` too. #}
+{% from "components/macros/layout.html" import card, figures as figure_list %}
+{% from "components/macros/table.html" import data_table %}
+{{ figure_list(figures) }}
+<div class="mt-6">
+{% call card(title="Profiles", subtitle="What this project can make, named for the result") %}
+  {{ data_table(
+       [{"key": "name", "label": "Profile", "kind": "code"},
+        {"key": "kind", "label": "Kind"},
+        {"key": "description", "label": "What it makes", "wrap": True}],
+       profiles,
+       empty="No profiles: add one to app/services/media/adapters/profiles.yml") }}
+{% endcall %}
+</div>
+{% if used %}
+<div class="mt-6">
+{% call card(title="Most used", subtitle="Which profiles this project actually reaches for") %}
+  {{ data_table([{"key": "label", "label": "Profile"}, {"key": "value", "label": "Jobs", "align": "right"}], used) }}
+{% endcall %}
+</div>
+{% endif %}

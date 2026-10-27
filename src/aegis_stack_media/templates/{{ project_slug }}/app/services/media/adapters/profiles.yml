@@ -1,0 +1,48 @@
+# Conversion profiles this project offers.
+#
+# A profile is the result you want, not a list of flags: the kind says
+# which ffmpeg recipe runs, and the numbers say how. Add one here and it
+# appears in the Media page, the CLI and the picker with no code change.
+#
+#   kind: gif | audio | image | thumbnail | video
+#   gif:       fps, width, max_bytes (retried smaller until it fits)
+#   audio:     bitrate
+#   image:     width
+#   thumbnail: at (seconds), width
+#   video:     crf (lower is better and bigger)
+#   any kind:  start, end (seconds) to trim
+
+readme-gif:
+  description: README demo GIF - 12 fps, 960 px wide, under 5 MB
+  kind: gif
+  fps: 12
+  width: 960
+  max_bytes: 5000000
+
+web-gif:
+  description: Small GIF for a page or a message - 15 fps, 640 px, under 2 MB
+  kind: gif
+  fps: 15
+  width: 640
+  max_bytes: 2000000
+
+mp3:
+  description: The soundtrack, as 192 kbit/s MP3
+  kind: audio
+  bitrate: 192k
+
+png:
+  description: One frame as a 1600 px wide PNG
+  kind: image
+  width: 1600
+
+thumb:
+  description: A 640 px wide PNG one second in
+  kind: thumbnail
+  at: 1.0
+  width: 640
+
+mp4:
+  description: H.264 MP4 at CRF 23, faststart for the web
+  kind: video
+  crf: 23

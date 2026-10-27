@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis-stack-media"
+version = "0.1.0"
+description = "Media conversion jobs for Aegis Stack: ffmpeg verbs, profiles, results in the bucket"
+authors = [{ name = "Leonard Bedner" }]
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+keywords = [
+    "aegis-stack",
+    "aegis-stack-plugin",
+    "media",
+    "ffmpeg",
+    "video",
+    "gif",
+]
+# The floor is the framework that reads a plugin's ``overseer_pages`` and
+# gates its ``extras`` (0.16.1), and that runs a plugin's queue as its own
+# ``worker-<queue>`` container (0.16.0).
+dependencies = [
+    "aegis-stack>=0.16.1",
+]
+
+[project.urls]
+"Aegis Plugin" = "https://aegis-stack.io/plugins/aegis-stack-media"
+"ffmpeg" = "https://ffmpeg.org"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.1.0",
+    "pre-commit>=3.7.0",
+]
+
+[project.entry-points."aegis.plugins"]
+media = "aegis_stack_media.plugin:get_spec"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis_stack_media"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+# Template files render into a generated project and are linted there,
+# under that project's rules (its first-party ``app``, its import order).
+extend-exclude = ["src/*/templates"]
+
+[tool.pytest.ini_options]
+# The template's own tests run inside a generated project; these pin the spec.
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]

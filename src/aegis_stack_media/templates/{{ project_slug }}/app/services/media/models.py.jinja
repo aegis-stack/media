@@ -1,0 +1,42 @@
+"""Tables for the media service.
+
+One row per conversion asked for: the profile, the source object's key,
+and - once it has run - the result's key and size. The row is the job's
+own record, so the page can show what happened without a second store,
+and the bucket holds the bytes.
+
+The source is content-addressed by ``app.core.storage``: the same upload
+twice is one object, and two rows can point at it.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlmodel import Field, SQLModel
+
+from app.core.time import utcnow
+
+
+class MediaJob(SQLModel, table=True):
+    """One conversion: a source object, a profile, and what came back."""
+
+    __tablename__ = "media_job"
+{%- if database_engine == "postgres" %}
+    __table_args__ = {"schema": "media"}
+{%- endif %}
+
+    id: int | None = Field(default=None, primary_key=True)
+    profile: str = Field(max_length=64, nullable=False, index=True)
+    source_key: str = Field(max_length=128, nullable=False)
+    source_name: str | None = Field(default=None, max_length=255)
+    source_bytes: int = Field(default=0)
+    output_key: str | None = Field(default=None, max_length=128)
+    output_bytes: int | None = Field(default=None)
+    content_type: str | None = Field(default=None, max_length=64)
+    # queued -> running -> done | failed. The page polls the row, which is
+    # why the status is here and not only in the framework's job store.
+    status: str = Field(default="queued", max_length=16, nullable=False, index=True)
+    error: str | None = Field(default=None, max_length=1000)
+    created_at: datetime = Field(default_factory=utcnow, nullable=False, index=True)
+    finished_at: datetime | None = Field(default=None)

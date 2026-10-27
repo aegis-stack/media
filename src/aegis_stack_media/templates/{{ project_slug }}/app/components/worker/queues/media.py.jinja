@@ -1,0 +1,108 @@
+# The media queue: one conversion per job.
+#
+# A queue of its own, so a three-minute transcode never holds a slot a
+# request needs, and its concurrency is the number of ffmpeg runs this box
+# may do at once - a CPU decision, not a latency one. One branch per worker
+# backend, because the queue's shape is the backend's, not ours; the work
+# itself is always ``jobs.run_conversion``.
+{%- if include_worker %}
+{%- if worker_backend == "taskiq" %}
+"""The media queue (TaskIQ): one conversion per job."""
+
+from typing import Any
+
+from taskiq_redis import RedisAsyncResultBackend
+
+from app.components.worker.broker import PausableRedisStreamBroker
+from app.components.worker.middleware import EventPublishMiddleware
+from app.core.config import settings
+
+QUEUE = "media"
+
+redis_url = settings.redis_url_effective
+
+broker = (
+    PausableRedisStreamBroker(
+        url=redis_url, queue_name=f"taskiq:{QUEUE}", consumer_id="0", xread_count=1
+    )
+    .with_result_backend(
+        RedisAsyncResultBackend(redis_url=redis_url, result_ex_time=60)
+    )
+    .with_middlewares(EventPublishMiddleware().set_queue_name(QUEUE))
+)
+
+
+@broker.task
+async def convert_media_task(media_job_id: int) -> dict[str, Any]:
+    """Run one conversion (``jobs.run_conversion``); the row says how it went."""
+    from app.services.media.jobs import run_conversion
+
+    return await run_conversion(media_job_id)
+{%- elif worker_backend == "dramatiq" %}
+"""The media queue (Dramatiq): one conversion per job."""
+
+from typing import Any
+
+import dramatiq
+
+# The broker is initialised before any actor is registered.
+import app.components.worker.broker  # noqa: F401
+
+QUEUE = "media"
+
+
+@dramatiq.actor(queue_name=QUEUE, max_retries=1)
+async def convert_media_task(media_job_id: int) -> dict[str, Any]:
+    """Run one conversion (``jobs.run_conversion``); the row says how it went."""
+    from app.services.media.jobs import run_conversion
+
+    return await run_conversion(media_job_id)
+{%- else %}
+"""The media queue (arq): one conversion per job."""
+
+from typing import Any
+
+from arq.connections import RedisSettings
+
+from app.components.worker import arq_hooks
+from app.core.config import settings
+from app.core.queue_workers import concurrency_for
+
+QUEUE = "media"
+
+
+async def convert_media_task(ctx: dict[str, Any], media_job_id: int) -> dict[str, Any]:
+    """Run one conversion (``jobs.run_conversion``); the row says how it went."""
+    from app.services.media.jobs import run_conversion
+
+    return await run_conversion(media_job_id)
+
+
+class WorkerSettings:
+    """The media queue, one conversion per job."""
+
+    description = "Media conversions (ffmpeg)"
+    functions = [convert_media_task]
+    base_settings = RedisSettings.from_dsn(settings.redis_url_effective)
+    redis_settings = RedisSettings(
+        host=base_settings.host,
+        port=base_settings.port,
+        database=base_settings.database,
+        password=base_settings.password,
+        conn_timeout=settings.REDIS_CONN_TIMEOUT,
+        conn_retries=settings.REDIS_CONN_RETRIES,
+        conn_retry_delay=settings.REDIS_CONN_RETRY_DELAY,
+    )
+    queue_name = f"arq:queue:{QUEUE}"
+    max_jobs = concurrency_for(QUEUE)  # Settings.WORKER_QUEUES
+    # The adapter's own timeout is the same ten minutes; past that the run
+    # is a hang, and a retry of a hang is another ten minutes of one core.
+    job_timeout = 600
+    keep_result = settings.WORKER_KEEP_RESULT_SECONDS
+    max_tries = 1
+    health_check_interval = settings.WORKER_HEALTH_CHECK_INTERVAL
+    on_startup, on_shutdown, on_job_start, after_job_end = arq_hooks.for_queue(
+        QUEUE, max_jobs
+    )
+{%- endif %}
+{%- endif %}

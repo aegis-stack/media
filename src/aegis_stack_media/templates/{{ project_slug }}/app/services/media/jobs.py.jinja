@@ -1,0 +1,75 @@
+"""The media queue's entry: one conversion, on the session it opens itself.
+
+``run_conversion`` is an entry point - a worker task or a background
+task has no caller to hand it a session - so it opens the one session and
+commits it, as ``jobs.py``/``health.py`` do everywhere else. Everything
+below that (``MediaService.run``, ``domains.convert``) takes the session
+it is given and never opens another.
+
+``start_conversion`` is the one way work reaches the queue: the page and
+the CLI call it, and neither knows whether a worker is running it or this
+process is.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.core.db import get_async_session
+from app.services.media.service import MediaService
+from app.services.system.jobs import JobHandle, get_job_runner
+
+
+async def run_conversion(media_job_id: int, *, report: Any = None) -> dict[str, Any]:
+    """Run one conversion and commit its row. The worker's task body."""
+    async with get_async_session() as session:
+        job = await MediaService().run(session, media_job_id, report=report)
+        await session.commit()
+        return {
+            "id": job.id,
+            "status": job.status,
+            "profile": job.profile,
+            "output_key": job.output_key,
+            "output_bytes": job.output_bytes,
+            "error": job.error,
+        }
+
+
+{%- if include_worker %}
+
+
+async def start_conversion(media_job_id: int) -> str:
+    """Hand the conversion to the worker's media queue.
+
+    The row was already written by ``submit``, so nothing is lost if the
+    hand-off fails: the job stays ``queued`` with its source in the
+    bucket. Returns the worker's task id.
+    """
+    from app.components.worker import pools
+    from app.core.constants import QueueName
+
+    handle = await pools.enqueue_task(
+        "convert_media_task", QueueName.MEDIA, media_job_id
+    )
+    return pools.job_id(handle)
+
+
+{%- else %}
+
+
+async def start_conversion(media_job_id: int) -> str:
+    """Run the conversion as a background task in this process.
+
+    No worker in this stack, so this process is where the work runs; the
+    framework's job runner keeps it visible on the Jobs page either way.
+    """
+
+    async def work(handle: JobHandle) -> dict[str, Any]:
+        return await run_conversion(media_job_id, report=handle.set_label)
+
+    return get_job_runner().start(
+        f"media-convert:{media_job_id}", work, label="Converting..."
+    )
+
+
+{%- endif %}
