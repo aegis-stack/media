@@ -190,11 +190,35 @@ async def submit(
     """
     profiles.get(profile_name)
     key = await get_storage().put(data, content_type=content_type)
+    return await submit_key(
+        session,
+        key,
+        profile_name=profile_name,
+        source_name=source_name,
+        source_bytes=len(data),
+    )
+
+
+async def submit_key(
+    session: AsyncSession,
+    key: str,
+    *,
+    profile_name: str,
+    source_name: str | None = None,
+    source_bytes: int | None = None,
+) -> MediaJob:
+    """Record a job for an object already in the bucket, queued, not run.
+
+    The agent's way in: it names a stored source rather than uploading
+    bytes. The profile is resolved first, so an unknown one is refused
+    before a row exists.
+    """
+    profiles.get(profile_name)
     job = MediaJob(
         profile=profile_name,
         source_key=key,
         source_name=source_name,
-        source_bytes=len(data),
+        source_bytes=source_bytes or 0,
         status="queued",
     )
     session.add(job)

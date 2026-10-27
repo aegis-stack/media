@@ -44,6 +44,24 @@ class MediaService:
             content_type=content_type,
         )
 
+    async def submit_key(
+        self,
+        session: AsyncSession,
+        key: str,
+        *,
+        profile_name: str,
+        source_name: str | None = None,
+        source_bytes: int | None = None,
+    ) -> MediaJob:
+        """Record a job for an object already stored, queued."""
+        return await convert.submit_key(
+            session,
+            key,
+            profile_name=profile_name,
+            source_name=source_name,
+            source_bytes=source_bytes,
+        )
+
     async def run(
         self,
         session: AsyncSession,

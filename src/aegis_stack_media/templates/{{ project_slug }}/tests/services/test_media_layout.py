@@ -90,11 +90,12 @@ def test_every_declared_owner_defines_what_it_owns() -> None:
 
 def test_only_the_entry_points_open_a_session() -> None:
     """The caller owns the unit of work: a service function takes the
-    session it is given. ``jobs``/``health`` have no caller, so they open
-    the one session - everywhere else it is the SQLite lock again."""
+    session it is given. The three with no caller - the queue task
+    (``jobs``), the health probe and the agent's tool - open their own,
+    and everywhere else it is the SQLite lock again."""
     openers = {
         relative
         for relative in _modules(SERVICE)
         if "get_async_session(" in (SERVICE / relative).read_text()
     }
-    assert openers <= {"jobs.py", "health.py"}
+    assert openers <= {"jobs.py", "health.py", "tools.py"}

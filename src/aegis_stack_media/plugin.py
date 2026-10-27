@@ -35,6 +35,7 @@ Design notes:
 from aegis.core.file_manifest import FileManifest
 from aegis.core.migration_spec import MigrationSpec
 from aegis.core.plugins.spec import (
+    AgentToolWiring,
     HealthCheckWiring,
     OverseerPageWiring,
     PartCategory,
@@ -124,10 +125,15 @@ def get_spec() -> PluginSpec:
                 "tests/services/test_media_profiles.py",
                 "tests/services/test_media_queries.py",
                 "tests/services/test_media_service.py",
+                "tests/services/test_media_tools.py",
             ],
             extras={"include_htmx": OVERSEER_FILES},
         ),
         wiring=PluginWiring(
+            # One tool, and the effect it has: declaring it here is what grants
+            # it to the chat agent and the MCP server. Its module is
+            # app/services/media/tools.py, found by convention.
+            agent_tools=[AgentToolWiring("media", effect="writes")],
             routers=[
                 # The page's own verbs (upload, start, poll). Its own prefix,
                 # and the Overseer gate on the router, since it is not mounted

@@ -70,11 +70,16 @@ def test_ffmpeg_is_a_pip_dependency_not_an_apt_line() -> None:
     assert all("ffmpeg " not in dep or "imageio" in dep for dep in spec.pyproject_deps)
 
 
-def test_the_agent_surface_is_not_shipped_yet() -> None:
-    """A plugin tool cannot declare its expected effect to the project's
-    ``test_tools.py`` bookkeeping, nor be granted to the seeded agent, so
-    0.1.0 ships none rather than a tool nobody can use."""
-    assert not (TEMPLATES / "app" / "services" / "media" / "tools.py").exists()
+def test_the_agent_surface_declares_its_effect() -> None:
+    """The tool ships, and the spec says what it does: declaring it is what
+    grants it to the chat agent and the MCP server, and what lets the
+    generated project's ``test_tools.py`` accept it (framework #1868)."""
+    tool = TEMPLATES / "app" / "services" / "media" / "tools.py"
+    assert tool.exists()
+    assert 'register_tool(' in tool.read_text()
+
+    declared = {entry.name: entry.effect for entry in get_spec().wiring.agent_tools}
+    assert declared == {"media": "writes"}
 
 
 @pytest.mark.parametrize(

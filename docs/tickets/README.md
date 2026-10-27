@@ -18,6 +18,7 @@ Filed as one batch: **tracker #1872**, shared label `plugin-system`.
 | 02 | #1869 |
 | 03 | #1870 |
 | 04 | #1871 |
+| -- | #1873 deploy+database without scheduler breaks `app.services.system` (found by this plugin's verification) |
 
 
 | # | Ticket | Blocks |
