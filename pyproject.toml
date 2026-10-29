@@ -23,7 +23,7 @@ keywords = [
 # gates its ``extras`` (0.16.1), and that runs a plugin's queue as its own
 # ``worker-<queue>`` container (0.16.0).
 dependencies = [
-    "aegis-stack>=0.16.1",
+    "aegis-stack>=0.17.0",
 ]
 
 [project.urls]

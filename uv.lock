@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 
 [[package]]
 name = "aegis-stack"
-version = "0.16.1"
+version = "0.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "copier" },
@@ -18,9 +18,9 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/7e/ddd43d6c1f9bf11b0c85fad762edd09d1018663a222bc1b20b831dbf2aa3/aegis_stack-0.16.1.tar.gz", hash = "sha256:15d5e8a218c02679d1a28ed0554454e22739b634b5acb1c4d513fe6c45cf348e", size = 8650897, upload-time = "2026-10-21T00:32:27.887Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2a/dc/1e3295d1e08101b941533fc33e7d5753d1de79c16abe94c525135396adb0/aegis_stack-0.17.0.tar.gz", hash = "sha256:151174d882e83aebe405f044ada34df908e30def91b170dd58a589708678e5e6", size = 9446336, upload-time = "2026-10-29T01:43:47.742Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fd/97/dd00c0ff1623a6629e8bd5e3aecf482551be6512a1e4cfb7eae26a19db08/aegis_stack-0.16.1-py3-none-any.whl", hash = "sha256:85da14896fd962a9da8493999cc48cf4d99bfcdc848d05a079d797d5fc377c0d", size = 9698595, upload-time = "2026-10-21T00:32:25.375Z" },
+    { url = "https://files.pythonhosted.org/packages/15/9e/cea4a0d791a1b80338197a860a986a639897a250fbfe3f974c110c3ce61b/aegis_stack-0.17.0-py3-none-any.whl", hash = "sha256:e94fe9078f01bdae8977a40a0f5a7bc1f5384d6ad1693ba0643959052e658a1a", size = 10824550, upload-time = "2026-10-29T01:43:44.605Z" },
 ]
 
 [[package]]
@@ -41,7 +41,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aegis-stack", specifier = ">=0.16.1" },
+    { name = "aegis-stack", specifier = ">=0.17.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
