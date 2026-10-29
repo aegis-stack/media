@@ -38,6 +38,14 @@ async def run_conversion(media_job_id: int, *, report: Any = None) -> dict[str, 
 {%- if include_worker %}
 
 
+# This plugin's queue: the module under ``app/components/worker/queues/``,
+# the ``worker-media`` container that runs it, and the task the enqueue
+# names. The same string lives in that queue module (``QUEUE``); a plugin's
+# queue is its own name, not a value of the framework's ``QueueName`` enum
+# (which lists only the queues the stack itself ships).
+QUEUE = "media"
+
+
 async def start_conversion(media_job_id: int) -> str:
     """Hand the conversion to the worker's media queue.
 
@@ -46,11 +54,8 @@ async def start_conversion(media_job_id: int) -> str:
     bucket. Returns the worker's task id.
     """
     from app.components.worker import pools
-    from app.core.constants import QueueName
 
-    handle = await pools.enqueue_task(
-        "convert_media_task", QueueName.MEDIA, media_job_id
-    )
+    handle = await pools.enqueue_task("convert_media_task", QUEUE, media_job_id)
     return pools.job_id(handle)
 
 

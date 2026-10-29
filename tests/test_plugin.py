@@ -81,6 +81,24 @@ def test_ffmpeg_is_a_pip_dependency_not_an_apt_line() -> None:
     not HAS_AGENT_TOOLS,
     reason="framework predates agent_tools (aegis-stack #1868)",
 )
+def test_no_template_reads_a_framework_queue_name() -> None:
+    """A plugin's queue is its own name; ``QueueName`` lists only the
+    stack's own queues. Reading one from there is an ``AttributeError`` at
+    the first conversion — the failure that shipped until a fresh stack was
+    driven end to end."""
+    sources = [
+        path
+        for pattern in ("*.py", "*.jinja")
+        for path in TEMPLATES.rglob(pattern)
+    ]
+    offenders = [
+        str(path.relative_to(TEMPLATES))
+        for path in sources
+        if "QueueName." in path.read_text(encoding="utf-8", errors="ignore")
+    ]
+    assert offenders == []
+
+
 def test_the_agent_surface_declares_its_effect() -> None:
     """The tool ships, and the spec says what it does: declaring it is what
     grants it to the chat agent and the MCP server, and what lets the
