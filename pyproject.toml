@@ -28,6 +28,8 @@ dependencies = [
 
 [project.urls]
 "Aegis Plugin" = "https://aegis-stack.io/plugins/aegis-stack-media"
+Repository = "https://github.com/aegis-stack/media"
+Issues = "https://github.com/aegis-stack/media/issues"
 "ffmpeg" = "https://ffmpeg.org"
 
 [project.optional-dependencies]
