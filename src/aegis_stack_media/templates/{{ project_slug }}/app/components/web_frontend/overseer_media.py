@@ -52,6 +52,34 @@ def _status(job: MediaJob) -> dict[str, str]:
     return status_cell(job.status, tone)
 
 
+PREVIEW_KINDS = (
+    ("image/", "image"),
+    ("audio/", "audio"),
+    ("video/", "video"),
+)
+"""What the browser can show in place, by the result's media type."""
+
+
+def preview(job: MediaJob) -> dict[str, str] | None:
+    """Where to fetch a preview of the result, and which element shows it.
+
+    Served by this app, not the bucket: a presigned URL points at the S3
+    endpoint the containers talk to (``http://seaweedfs:8333``), which a
+    browser on the host cannot reach — the link works, the picture does
+    not. ``/output/<id>`` streams the object through the app instead, so a
+    result can be looked at wherever the page is.
+    """
+    if job.status != "done" or not job.output_key or not job.content_type:
+        return None
+    kind = next(
+        (kind for prefix, kind in PREVIEW_KINDS if job.content_type.startswith(prefix)),
+        None,
+    )
+    if kind is None:
+        return None
+    return {"kind": kind, "url": f"{PARTIALS}/output/{job.id}"}
+
+
 async def _link(job: MediaJob) -> str | None:
     """A time-limited link straight to the object, when the bucket gives one."""
     if job.status != "done" or not job.output_key:
@@ -69,6 +97,7 @@ def job_view_from(job: MediaJob) -> dict[str, Any]:
         "output": format_bytes(job.output_bytes) if job.output_bytes else None,
         "source": format_bytes(job.source_bytes),
         "when": format_relative_time(job.created_at),
+        "preview": preview(job),
     }
 
 
@@ -103,19 +132,35 @@ async def _overview(req: SectionRequest) -> dict[str, Any]:
     }
 
 
-async def _convert(req: SectionRequest) -> dict[str, Any]:
+async def _pinned(req: SectionRequest) -> dict[str, Any]:
+    """The job the query names, flattened into the template's context.
+
+    Flattened, not nested under ``job``: the row template reads ``job.id``,
+    ``preview``, ``status`` and the rest as siblings, and passing the view
+    as a single ``job`` key left every field blank — the poll on
+    ``/jobs/<id>`` renders correctly because it spreads the same view.
+    """
     raw = req.query.get(JOB_PARAM) or ""
-    view = await job_view(req.db, int(raw)) if raw.isdigit() else None
-    return {"profiles": MediaService().profiles(), "job": view, "partials": PARTIALS}
+    if not raw.isdigit():
+        return {}
+    view = await job_view(req.db, int(raw))
+    return view or {}
+
+
+async def _convert(req: SectionRequest) -> dict[str, Any]:
+    return {
+        **await _pinned(req),
+        "profiles": MediaService().profiles(),
+        "partials": PARTIALS,
+    }
 
 
 async def _results(req: SectionRequest) -> dict[str, Any]:
     jobs = await queries.recent_jobs(req.db, limit=LIST_SIZE)
     links = await asyncio.gather(*(_link(job) for job in jobs))
-    raw = req.query.get(JOB_PARAM) or ""
     return {
+        **await _pinned(req),
         "partials": PARTIALS,
-        "job": await job_view(req.db, int(raw)) if raw.isdigit() else None,
         "rows": [
             {
                 "id": job.id,
@@ -124,6 +169,7 @@ async def _results(req: SectionRequest) -> dict[str, Any]:
                 "source": format_bytes(job.source_bytes),
                 "output": format_bytes(job.output_bytes) if job.output_bytes else None,
                 "result": {"label": "Open", "url": link} if link else None,
+                "preview": preview(job),
                 "when": format_relative_time(job.created_at),
                 "error": job.error,
             }

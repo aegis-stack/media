@@ -58,3 +58,61 @@ def test_a_finished_job_renders_without_polling() -> None:
     html = overseer_media.render_job(overseer_media.job_view_from(job))
     assert "every 2s" not in html
     assert "2.0 KB" in html or "2 KB" in html
+
+
+def test_a_finished_result_points_at_the_apps_own_preview() -> None:
+    """The picture comes from the app, not the bucket.
+
+    A presigned link names the S3 endpoint the containers use
+    (``http://seaweedfs:8333``), which the browser cannot reach, so the row
+    previews through ``/partials/overseer/media/output/<id>``.
+    """
+    job = MediaJob(
+        id=5,
+        profile="readme-gif",
+        source_key="sha256/aa/bb/" + "0" * 64,
+        output_key="sha256/cc/dd/" + "1" * 64,
+        source_bytes=1024,
+        output_bytes=4096,
+        content_type="image/gif",
+        status="done",
+        created_at=datetime(2026, 1, 1),
+    )
+
+    view = overseer_media.job_view_from(job)
+
+    assert view["preview"] == {
+        "kind": "image",
+        "url": "/partials/overseer/media/output/5",
+    }
+    assert "max-h-72" in overseer_media.render_job(view)
+
+
+def test_a_result_a_browser_cannot_show_gets_no_preview() -> None:
+    """A zip is a link, not a broken image."""
+    job = MediaJob(
+        id=6,
+        profile="png",
+        source_key="sha256/aa/bb/" + "0" * 64,
+        output_key="sha256/cc/dd/" + "1" * 64,
+        source_bytes=1024,
+        output_bytes=4096,
+        content_type="application/zip",
+        status="done",
+        created_at=datetime(2026, 1, 1),
+    )
+
+    assert overseer_media.job_view_from(job)["preview"] is None
+
+
+def test_a_job_still_running_has_nothing_to_show_yet() -> None:
+    job = MediaJob(
+        id=7,
+        profile="web-gif",
+        source_key="sha256/aa/bb/" + "0" * 64,
+        source_bytes=1024,
+        status="running",
+        created_at=datetime(2026, 1, 1),
+    )
+
+    assert overseer_media.job_view_from(job)["preview"] is None

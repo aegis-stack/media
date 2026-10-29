@@ -2,6 +2,18 @@
    the source and the result were, and a link straight to the bucket. The
    newest one is pinned above the table and polls itself until it lands. #}
 {% from "components/macros/table.html" import data_table %}
+{# A thumbnail for what a browser can show, nothing for the rest: the row
+   is about the conversion, the picture is the payoff. #}
+{% macro _preview(shot) -%}
+{%- if shot and shot.kind == "image" -%}
+<a href="{{ shot.url }}" target="_blank" rel="noopener">
+  <img src="{{ shot.url }}" alt="" loading="lazy"
+       class="h-12 w-auto rounded border border-aegis-border">
+</a>
+{%- elif shot -%}
+<span class="text-xs text-aegis-muted">{{ shot.kind }}</span>
+{%- endif -%}
+{%- endmacro %}
 {% if job %}<div class="mb-4">{% include "pages/overseer/media/_job.html" %}</div>{% endif %}
 {{ data_table(
      [{"key": "id", "label": "Id", "kind": "int", "align": "right"},
@@ -9,6 +21,7 @@
       {"key": "status", "label": "Status", "kind": "status"},
       {"key": "source", "label": "In", "align": "right"},
       {"key": "output", "label": "Out", "align": "right"},
+      {"key": "preview", "label": "", "render": _preview},
       {"key": "result", "label": "Result", "kind": "link"},
       {"key": "when", "label": "When"}],
      rows,

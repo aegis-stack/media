@@ -13,4 +13,16 @@
   <span class="text-aegis-muted">{{ source }} in{% if output %} - {{ output }} out{% endif %}</span>
   <span class="text-aegis-muted">{{ when }}</span>
   {% if job.error %}<span class="text-error break-words">{{ job.error }}</span>{% endif %}
+  {% if preview %}
+  <div class="w-full">
+    {% if preview.kind == "image" %}
+    <img src="{{ preview.url }}" alt="The converted {{ job.profile }} result"
+         class="max-h-72 w-auto rounded border border-aegis-border">
+    {% elif preview.kind == "audio" %}
+    <audio src="{{ preview.url }}" controls class="w-full"></audio>
+    {% elif preview.kind == "video" %}
+    <video src="{{ preview.url }}" controls class="max-h-72 w-auto rounded border border-aegis-border"></video>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>

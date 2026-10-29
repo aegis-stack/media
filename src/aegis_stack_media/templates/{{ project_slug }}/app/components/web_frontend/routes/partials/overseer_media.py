@@ -72,6 +72,34 @@ async def start(
     )
 
 
+@router.get("/output/{media_job_id}")
+async def output(
+    media_job_id: int,
+    db: AsyncSession = Depends(get_async_db),
+) -> Response:
+    """The result itself, streamed to the browser.
+
+    Not a redirect to the bucket: a presigned URL names the S3 endpoint
+    the containers use, which the browser cannot reach. One ownership
+    check (the row must exist and be done), then the bytes.
+    """
+    from app.core.storage import get_storage
+
+    job = await MediaService().job(db, media_job_id)
+    if job is None or job.status != "done" or not job.output_key:
+        raise HTTPException(status_code=404, detail="No result for that conversion.")
+    data = await get_storage().get(job.output_key)
+    return Response(
+        content=data,
+        media_type=job.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": "inline",
+            # The result never changes: the key is its content hash.
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
 @router.get("/jobs/{media_job_id}", response_class=HTMLResponse)
 async def job_row(
     media_job_id: int,
