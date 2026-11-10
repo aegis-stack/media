@@ -37,7 +37,7 @@ async def convert_media_task(media_job_id: int) -> dict[str, Any]:
     """Run one conversion (``jobs.run_conversion``); the row says how it went."""
     from app.services.media.jobs import run_conversion
 
-    return await run_conversion(media_job_id)
+    return (await run_conversion(media_job_id)).model_dump()
 {%- elif worker_backend == "dramatiq" %}
 """The media queue (Dramatiq): one conversion per job."""
 
@@ -56,7 +56,7 @@ async def convert_media_task(media_job_id: int) -> dict[str, Any]:
     """Run one conversion (``jobs.run_conversion``); the row says how it went."""
     from app.services.media.jobs import run_conversion
 
-    return await run_conversion(media_job_id)
+    return (await run_conversion(media_job_id)).model_dump()
 {%- else %}
 """The media queue (arq): one conversion per job."""
 
@@ -75,7 +75,7 @@ async def convert_media_task(ctx: dict[str, Any], media_job_id: int) -> dict[str
     """Run one conversion (``jobs.run_conversion``); the row says how it went."""
     from app.services.media.jobs import run_conversion
 
-    return await run_conversion(media_job_id)
+    return (await run_conversion(media_job_id)).model_dump()
 
 
 class WorkerSettings:

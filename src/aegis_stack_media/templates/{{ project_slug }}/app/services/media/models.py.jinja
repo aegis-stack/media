@@ -1,9 +1,14 @@
 """Tables for the media service.
 
-One row per conversion asked for: the profile, the source object's key,
-and - once it has run - the result's key and size. The row is the job's
-own record, so the page can show what happened without a second store,
-and the bucket holds the bytes.
+Two of them. One row per conversion asked for: the profile, the source
+object's key, and - once it has run - the result's key and size; the row is
+the job's own record, so the page can show what happened without a second
+store, and the bucket holds the bytes.
+
+And one row per profile this project has *changed*: the shipped
+``profiles.yml`` says what a profile is out of the box, this table says what
+this project made it. Editing a profile is a setting, so it belongs in the
+database beside every other setting - not in a file rewritten at runtime.
 
 The source is content-addressed by ``app.core.storage``: the same upload
 twice is one object, and two rows can point at it.
@@ -31,6 +36,10 @@ class MediaJob(SQLModel, table=True):
     source_key: str = Field(max_length=128, nullable=False)
     source_name: str | None = Field(default=None, max_length=255)
     source_bytes: int = Field(default=0)
+    # This job's own trim, "the first ``end`` seconds" or, negative like
+    # ffmpeg's ``-sseof``, the last; in place of the profile's. Empty is the
+    # profile's own (the whole file, as shipped).
+    end: float | None = Field(default=None)
     output_key: str | None = Field(default=None, max_length=128)
     output_bytes: int | None = Field(default=None)
     content_type: str | None = Field(default=None, max_length=64)
@@ -40,3 +49,36 @@ class MediaJob(SQLModel, table=True):
     error: str | None = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=utcnow, nullable=False, index=True)
     finished_at: datetime | None = Field(default=None)
+
+    @property
+    def has_result(self) -> bool:
+        """Done, and what it made is still stored (not deleted since)."""
+        return self.status == "done" and bool(self.output_key)
+
+
+class MediaProfile(SQLModel, table=True):
+    """What this project changed about one shipped profile.
+
+    Every column is optional: absent means "as shipped", and a NULL column
+    keeps the shipped value for that one setting. The name is the profile's
+    name in ``profiles.yml``, so the file stays the vocabulary - adding a
+    profile is still a data edit, and this table only tunes the ones that
+    exist.
+    """
+
+    __tablename__ = "media_profile"
+{%- if database_engine == "postgres" %}
+    __table_args__ = {"schema": "media"}
+{%- endif %}
+
+    name: str = Field(primary_key=True, max_length=64)
+    description: str | None = Field(default=None, max_length=255)
+    fps: int | None = Field(default=None)
+    width: int | None = Field(default=None)
+    max_bytes: int | None = Field(default=None)
+    bitrate: str | None = Field(default=None, max_length=16)
+    at: float | None = Field(default=None)
+    crf: int | None = Field(default=None)
+    start: float | None = Field(default=None)
+    end: float | None = Field(default=None)
+    updated_at: datetime = Field(default_factory=utcnow, nullable=False)

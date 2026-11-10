@@ -16,13 +16,6 @@ from aegis.core.plugins.spec import PluginKind, PluginSpec
 
 from aegis_stack_media.plugin import get_spec
 
-try:  # the wiring, and the field it travels in (aegis-stack #1868)
-    from aegis.core.plugins.spec import AgentToolWiring  # noqa: F401
-
-    HAS_AGENT_TOOLS = True
-except ImportError:  # pragma: no cover - a framework that predates the grant
-    HAS_AGENT_TOOLS = False
-
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 TEMPLATES = (
     Path(__file__).resolve().parents[1]
@@ -62,7 +55,12 @@ def test_the_bytes_need_a_store_and_the_work_prefers_a_worker() -> None:
 
 def test_the_plugin_owns_its_queue_and_its_table() -> None:
     spec = get_spec()
-    assert spec.worker_queues == ["media"]
+    assert spec.worker_queue_names == ["media"]
+    # One ffmpeg run at a time: the project default of 10 is ten encodes
+    # in a worker allowed half a CPU.
+    assert spec.worker_queues[0].concurrency == 1
+    # A 1080p encode peaks at about 520 MB: the stack's 512M is killed.
+    assert spec.worker_queues[0].memory == "1G"
     assert len(spec.migrations) == 1
     migration = spec.migrations[0]
     assert migration.service_name == "media"
@@ -77,19 +75,13 @@ def test_ffmpeg_is_a_pip_dependency_not_an_apt_line() -> None:
     assert all("ffmpeg " not in dep or "imageio" in dep for dep in spec.pyproject_deps)
 
 
-@pytest.mark.skipif(
-    not HAS_AGENT_TOOLS,
-    reason="framework predates agent_tools (aegis-stack #1868)",
-)
 def test_no_template_reads_a_framework_queue_name() -> None:
     """A plugin's queue is its own name; ``QueueName`` lists only the
     stack's own queues. Reading one from there is an ``AttributeError`` at
     the first conversion — the failure that shipped until a fresh stack was
     driven end to end."""
     sources = [
-        path
-        for pattern in ("*.py", "*.jinja")
-        for path in TEMPLATES.rglob(pattern)
+        path for pattern in ("*.py", "*.jinja") for path in TEMPLATES.rglob(pattern)
     ]
     offenders = [
         str(path.relative_to(TEMPLATES))
@@ -105,7 +97,7 @@ def test_the_agent_surface_declares_its_effect() -> None:
     generated project's ``test_tools.py`` accept it (framework #1868)."""
     tool = TEMPLATES / "app" / "services" / "media" / "tools.py"
     assert tool.exists()
-    assert 'register_tool(' in tool.read_text()
+    assert "register_tool(" in tool.read_text()
 
     declared = {entry.name: entry.effect for entry in get_spec().wiring.agent_tools}
     assert declared == {"media": "writes"}
@@ -179,3 +171,47 @@ def test_the_readme_section_names_what_a_project_gets() -> None:
     readme = get_spec().readme
     assert readme.cli_groups == ["media"]
     assert any("media profiles" in step for step in readme.first_steps)
+
+
+def test_the_framework_is_not_a_runtime_dependency() -> None:
+    """A plugin is installed *into* a generated project.
+
+    A runtime ``aegis-stack`` requirement makes pip resolve the framework's
+    pins on top of the project's, and the install fails on the first
+    disagreement — met in practice when the project pinned ``typer==0.16.0``
+    and a released aegis-stack asked for ``typer==0.27.3``. It reads as a
+    plugin incompatibility and is not one: the generated app never imports
+    aegis, and the compatibility that matters is the spec's
+    ``aegis_version``, which the CLI checks at ``aegis add`` time.
+    """
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    project = tomllib.loads(pyproject.read_text())
+    assert project["project"]["dependencies"] == []
+    dev = project["project"]["optional-dependencies"]["dev"]
+    assert f"aegis-stack{get_spec().aegis_version}" in dev
+
+
+def test_the_service_card_opens_a_modal_that_exists() -> None:
+    """The dashboard renders a card for every component in the health tree,
+    and a click resolves the card's ``component_name`` in the frontend's
+    modal registry. A service that registers no modal leaves a dead click
+    and logs a warning on every dashboard refresh:
+
+        No modal registered for component 'service_media'; card click is a
+        no-op (check create_modal_for_component and the modal_map).
+
+    The health tree prefixes a service's id with ``service_``; that is the
+    name the card carries, so it is the key the modal must register under.
+    """
+    templates = Path(__file__).parent.parent / "src" / "aegis_stack_media" / "templates"
+    project = templates / "{{ project_slug }}"
+
+    modals = [
+        w for w in get_spec().wiring.dashboard_modals if w.modal_id == "service_media"
+    ]
+    assert len(modals) == 1, "exactly one modal registers under 'service_media'"
+
+    wiring = modals[0]
+    modal_file = project / f"{wiring.module.replace('.', '/')}.py"
+    assert modal_file.exists(), f"{wiring.module} is not shipped by the plugin"
+    assert f"class {wiring.symbol}" in modal_file.read_text()

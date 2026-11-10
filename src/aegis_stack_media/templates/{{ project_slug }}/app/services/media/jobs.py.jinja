@@ -17,22 +17,16 @@ from typing import Any
 
 from app.core.db import get_async_session
 from app.services.media.service import MediaService
+from app.services.media.schemas import ConversionResult
 from app.services.system.jobs import JobHandle, get_job_runner
 
 
-async def run_conversion(media_job_id: int, *, report: Any = None) -> dict[str, Any]:
+async def run_conversion(media_job_id: int, *, report: Any = None) -> ConversionResult:
     """Run one conversion and commit its row. The worker's task body."""
     async with get_async_session() as session:
         job = await MediaService().run(session, media_job_id, report=report)
         await session.commit()
-        return {
-            "id": job.id,
-            "status": job.status,
-            "profile": job.profile,
-            "output_key": job.output_key,
-            "output_bytes": job.output_bytes,
-            "error": job.error,
-        }
+        return ConversionResult.model_validate(job, from_attributes=True)
 
 
 {%- if include_worker %}
@@ -70,7 +64,9 @@ async def start_conversion(media_job_id: int) -> str:
     """
 
     async def work(handle: JobHandle) -> dict[str, Any]:
-        return await run_conversion(media_job_id, report=handle.set_label)
+        return (
+            await run_conversion(media_job_id, report=handle.set_label)
+        ).model_dump()
 
     return get_job_runner().start(
         f"media-convert:{media_job_id}", work, label="Converting..."

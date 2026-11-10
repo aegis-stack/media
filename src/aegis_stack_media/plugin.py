@@ -17,9 +17,11 @@ Design notes:
   runs on the plugin's own ``media`` queue in its own ``worker-media``
   process, so a three-minute transcode never holds a slot a request
   needs. Without one, ``jobs.start_conversion`` runs it in-process.
-- ``worker_queues=["media"]`` — one process per queue. Its concurrency
-  is the number of ffmpeg runs at once, which is a CPU decision, not a
-  request-latency one.
+- ``worker_queues=[WorkerQueueWiring("media", concurrency=1, memory="1G")]``
+  — one process per queue, one ffmpeg run at a time: its concurrency is a
+  CPU and memory decision, not a request-latency one, and the project
+  default (10) put ten conversions in a worker allowed half a CPU. A 1080p
+  encode peaks at about 520 MB, so the stack's 512M worker is raised to 1G.
 - ``migrations`` — one table, ``media.media_job``, in the plugin's own
   Postgres schema (unqualified on SQLite, which has no schemas).
 - ffmpeg itself is a pip dependency (``imageio-ffmpeg`` ships a static
@@ -32,11 +34,11 @@ Design notes:
   agent. Tracked as a framework issue, not shipped broken here.
 """
 
-from typing import Any
-
 from aegis.core.file_manifest import FileManifest
 from aegis.core.migration_spec import MigrationSpec
 from aegis.core.plugins.spec import (
+    AgentToolWiring,
+    FrontendWidgetWiring,
     HealthCheckWiring,
     OverseerPageWiring,
     PartCategory,
@@ -45,27 +47,8 @@ from aegis.core.plugins.spec import (
     PluginWiring,
     ReadmeWiring,
     RouterWiring,
+    WorkerQueueWiring,
 )
-
-try:  # aegis-stack >= 0.17.0 (framework #1868)
-    from aegis.core.plugins.spec import AgentToolWiring as _AgentToolWiring
-except ImportError:  # pragma: no cover - older CLI, refused by aegis_version
-    _AgentToolWiring = None
-
-
-def _agent_tool_kwargs() -> dict[str, Any]:
-    """``agent_tools=[...]`` where the framework can carry it, else nothing.
-
-    Both halves are guarded — the import and the keyword: an older
-    ``aegis`` has no ``AgentToolWiring`` *and* no ``PluginWiring.agent_tools``
-    field, so passing an empty list would still be an unexpected keyword.
-    Without this the plugin dies in discovery, before ``aegis_version`` can
-    say which release it needs.
-    """
-    if _AgentToolWiring is None:
-        return {}
-    return {"agent_tools": [_AgentToolWiring("media", effect="writes")]}
-
 
 HEALTH_LABEL = "media"
 """What the health check reports under, the Overseer entry it is the page
@@ -104,14 +87,15 @@ def get_spec() -> PluginSpec:
         ),
         category=PartCategory.APP,
         health_name=HEALTH_LABEL,
-        version="0.1.0",
+        version="0.1.4",
         verified=False,
-        # 0.17.0 carries ``AgentToolWiring`` (framework #1868), which the
-        # tool grant below needs to exist at all; 0.16.1 is the floor for
-        # everything else (``overseer_pages``, gated ``extras``), so a tool
-        # declaration on an older CLI is the version that rules it out, not
-        # an ImportError.
-        aegis_version=">=0.17.0",
+        # 0.20.0 carries a queue's ``memory`` and the page's template hooks
+        # (``page_titled``, a filled ``primary_button``, a ``data-snug``
+        # dialog, the media icons); 0.17.0 ``AgentToolWiring`` (framework
+        # #1868); 0.16.1 ``overseer_pages`` and gated ``extras``. Refused by
+        # version at ``aegis add``, not met as an error on the page. The dev
+        # dependency in pyproject.toml is the same floor.
+        aegis_version=">=0.20.0",
         # The verb people type in this project's CLI, decoupled from the
         # install identifier (``media`` here, but the two may differ).
         cli_name="media",
@@ -119,14 +103,15 @@ def get_spec() -> PluginSpec:
         # work needs a worker to run on when the stack has one.
         required_components=["database", "storage"],
         recommended_components=["worker"],
-        worker_queues=["media"],
+        worker_queues=[WorkerQueueWiring("media", concurrency=1, memory="1G")],
         # A static ffmpeg build, so no Dockerfile apt line and no
         # "works on my laptop" divergence. The floor is 0.5 (the API this
         # uses - ``get_ffmpeg_exe`` - has not changed since); the ceiling
         # stays under 1.0 so a major release is a decision, not a surprise.
         # ``alembic`` because this plugin ships a migration and a
-        # storage-only stack does not pull it in.
-        pyproject_deps=["imageio-ffmpeg>=0.5,<1", "alembic>=1.13"],
+        # storage-only stack does not pull it in. ``pillow`` reads an
+        # animated WebP, which ffmpeg cannot (``adapters/webp.py``).
+        pyproject_deps=["imageio-ffmpeg>=0.5,<1", "alembic>=1.13", "pillow>=11,<14"],
         migrations=[
             MigrationSpec(
                 service_name="media",
@@ -142,6 +127,9 @@ def get_spec() -> PluginSpec:
                 "app/services/media",
                 "app/components/worker/queues/media.py",
                 "app/cli/media.py",
+                "app/components/frontend/dashboard/modals/media_modal.py",
+                "tests/cli/test_media_cli.py",
+                "tests/components/frontend/test_media_modal.py",
                 "tests/services/test_media_convert.py",
                 "tests/services/test_media_jobs.py",
                 "tests/services/test_media_layout.py",
@@ -155,9 +143,8 @@ def get_spec() -> PluginSpec:
         wiring=PluginWiring(
             # One tool, and the effect it has: declaring it here is what grants
             # it to the chat agent and the MCP server. Its module is
-            # app/services/media/tools.py, found by convention. Omitted
-            # entirely on a framework that predates the field.
-            **_agent_tool_kwargs(),
+            # app/services/media/tools.py, found by convention.
+            agent_tools=[AgentToolWiring("media", effect="writes")],
             routers=[
                 # The page's own verbs (upload, start, poll). Its own prefix,
                 # and the Overseer gate on the router, since it is not mounted
@@ -167,6 +154,19 @@ def get_spec() -> PluginSpec:
                     alias="media_overseer_router",
                     tags=["overseer"],
                     when=_htmx,
+                ),
+            ],
+            # The dashboard draws a card per component in the health tree and
+            # resolves a click through the frontend's modal registry. Without
+            # this entry the media card is a dead click that logs a warning on
+            # every refresh: "No modal registered for component
+            # 'service_media'". The id is the health tree's, not the service's
+            # own name.
+            dashboard_modals=[
+                FrontendWidgetWiring(
+                    module="app.components.frontend.dashboard.modals.media_modal",
+                    symbol="MediaDetailDialog",
+                    modal_id="service_media",
                 ),
             ],
             health_checks=[

@@ -22,10 +22,8 @@ import typer
 from app.core.db import get_async_session
 from app.core.formatting import format_bytes, format_relative_time
 from app.core.storage import get_storage
-from app.services.media import queries
-from app.services.media.adapters.profiles import UnknownProfileError
 from app.services.media.jobs import run_conversion, start_conversion
-from app.services.media.service import MediaService
+from app.services.media.service import MediaService, UnknownProfileError
 
 app = typer.Typer(
     name="media",
@@ -54,11 +52,23 @@ async def convert(
     wait: Annotated[
         bool, typer.Option("--wait", help="Run it here and print the result")
     ] = False,
+    first: Annotated[
+        float | None,
+        typer.Option("--first", min=0, help="Keep only the first seconds"),
+    ] = None,
+    last: Annotated[
+        float | None,
+        typer.Option("--last", min=0, help="Keep only the last seconds"),
+    ] = None,
 ) -> None:
     """Store a file and convert it with a profile."""
     if not path.is_file():
         console.print(f"[red]No such file:[/red] {path}")
         raise typer.Exit(1)
+    if first is not None and last is not None:
+        console.print("[red]--first or --last, not both.[/red]")
+        raise typer.Exit(1)
+    end = -last if last is not None else first  # ``MediaJob.end``
     data = path.read_bytes()
     try:
         async with get_async_session() as session:
@@ -67,10 +77,11 @@ async def convert(
                 data,
                 profile_name=profile,
                 source_name=path.name,
+                end=end,
             )
             await session.commit()
             media_job_id = int(job.id or 0)
-    except UnknownProfileError as exc:
+    except (UnknownProfileError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from None
     console.print(
@@ -78,10 +89,10 @@ async def convert(
     )
     if wait:
         result = await run_conversion(media_job_id)
-        if result["status"] != "done":
-            console.print(f"[red]{result['error']}[/red]")
+        if result.status != "done":
+            console.print(f"[red]{result.error}[/red]")
             raise typer.Exit(1)
-        await _print_link(str(result["output_key"]), result["output_bytes"] or 0)
+        await _print_link(str(result.output_key), result.output_bytes or 0)
         return
     await start_conversion(media_job_id)
     console.print(f"Queued with [bold]{profile}[/bold]; `media results` follows it.")
@@ -101,7 +112,7 @@ async def results(
 ) -> None:
     """The newest conversions and what became of them."""
     async with get_async_session() as session:
-        jobs = await queries.recent_jobs(session, limit=limit)
+        jobs = await MediaService().recent(session, limit=limit)
     table = Table(title="Media results")
     table.add_column("Id", justify="right")
     table.add_column("Profile")

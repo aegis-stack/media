@@ -1,0 +1,5 @@
+{# The estimate beside "Make it", and the chosen file's line in the drop
+   zone (out of band): both from ``overseer_media.estimate_body``, so the
+   size and length read the way every other size on the page does. #}
+{{ estimate }}
+<span id="media-file-facts" hx-swap-oob="true">{% if file %} · {{ file }}{% endif %}</span>

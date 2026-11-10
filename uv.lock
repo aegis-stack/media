@@ -25,14 +25,12 @@ wheels = [
 
 [[package]]
 name = "aegis-stack-media"
-version = "0.1.0"
+version = "0.1.4"
 source = { editable = "." }
-dependencies = [
-    { name = "aegis-stack" },
-]
 
 [package.optional-dependencies]
 dev = [
+    { name = "aegis-stack" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -41,7 +39,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aegis-stack", specifier = ">=0.17.0" },
+    { name = "aegis-stack", marker = "extra == 'dev'", specifier = ">=0.17.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },

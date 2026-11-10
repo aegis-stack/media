@@ -8,8 +8,9 @@ of leaving it to the first person who uploads a video.
 from __future__ import annotations
 
 from app.core.db import get_async_session
-from app.services.media import SERVICE_NAME, queries
+from app.services.media import SERVICE_NAME
 from app.services.media.adapters import ffmpeg
+from app.services.media.service import MediaService
 from app.services.system.models import ComponentStatus, ComponentStatusType
 
 
@@ -26,9 +27,7 @@ async def media_health() -> ComponentStatus:
         )
     try:
         async with get_async_session() as session:
-            jobs, done, failed, source_bytes, output_bytes, last = await queries.totals(
-                session
-            )
+            stats = await MediaService().stats(session)
         return ComponentStatus(
             name=SERVICE_NAME,
             status=ComponentStatusType.HEALTHY,
@@ -36,12 +35,7 @@ async def media_health() -> ComponentStatus:
             metadata={
                 "subtitle": "Media",
                 "version": ffmpeg.version(),
-                "jobs": jobs,
-                "done": done,
-                "failed": failed,
-                "source_bytes": source_bytes,
-                "output_bytes": output_bytes,
-                "last_finished_at": last.isoformat() if last else None,
+                **stats.model_dump(),
             },
         )
     except Exception as exc:  # noqa: BLE001 - a health check reports, never raises

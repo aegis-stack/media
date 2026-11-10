@@ -1,0 +1,11 @@
+{# The system side of media: figures, jobs per day, the profile mix, bytes
+   in and out, and every conversion with what ffmpeg said. The charts and
+   the table are separate events on one stream, so a table whose "when"
+   moves each tick does not redraw the charts. #}
+{% from "components/macros/layout.html" import card %}
+<div hx-ext="sse" sse-connect="{{ events }}" class="space-y-6">
+  <div sse-swap="{{ charts_event }}" hx-target="this">{% include "pages/overseer/media/_activity_charts.html" %}</div>
+  {% call card(title="Every conversion", subtitle="Newest first; a row opens to what ffmpeg said") %}
+  <div sse-swap="{{ results_event }}" hx-target="this">{% include "pages/overseer/media/_results_table.html" %}</div>
+  {% endcall %}
+</div>
