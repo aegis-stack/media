@@ -4,7 +4,7 @@
 {% from "pages/overseer/media/_uses.html" import uses %}
 <figure data-snug class="space-y-3">
   {% if c.preview.kind == "image" %}
-  <img src="{{ c.preview.url }}" alt="{{ c.title }}" class="mx-auto max-h-[80vh] max-w-full rounded">
+  {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ c.preview.url }}" alt="{{ c.title }}" class="mx-auto max-h-[80vh] max-w-full rounded">{# djlint:on #}
   {% elif c.preview.kind == "video" %}
   <video src="{{ c.preview.url }}" controls autoplay playsinline class="mx-auto max-h-[80vh] max-w-full rounded"></video>
   {% else %}

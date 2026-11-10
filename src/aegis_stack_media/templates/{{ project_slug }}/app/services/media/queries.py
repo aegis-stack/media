@@ -45,15 +45,6 @@ async def recent_jobs(
     return list((await db.exec(stmt)).all())
 
 
-async def key_in_use(db: AsyncSession, key: str) -> bool:
-    """Whether any job still holds this object, as its source or result:
-    keys are content hashes, so two jobs can share one."""
-    stmt = select(MediaJob.id).where(
-        (MediaJob.output_key == key) | (MediaJob.source_key == key)
-    )
-    return (await db.exec(stmt.limit(1))).first() is not None
-
-
 async def totals(
     db: AsyncSession,
 ) -> tuple[int, int, int, int, int, int, datetime | None]:

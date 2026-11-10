@@ -19,6 +19,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.media.adapters import ffmpeg, profiles, webp
 from app.services.media.domains import convert
+from tests.services._media import SOURCE
 
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP4z8CAFTEMLQkA"
@@ -142,7 +143,7 @@ async def test_a_jobs_end_replaces_the_profiles_trim(
     """``MediaJob.end`` goes on the profile as it is, sign and all."""
     from app.services.media.models import MediaJob
 
-    job = MediaJob(profile="x-video", source_key="sha256/aa/bb/" + "0" * 64)
+    job = MediaJob(profile="x-video", source_key=SOURCE)
     job.end = -5.0
     profile = await convert.effective(async_db_session, job)
     assert (profile.start, profile.end) == (None, -5.0)

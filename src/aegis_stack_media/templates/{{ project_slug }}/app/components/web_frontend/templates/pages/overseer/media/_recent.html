@@ -27,7 +27,7 @@
   <article class="overflow-hidden rounded-lg border {{ 'border-aegis-error/50' if failed else 'border-aegis-border' }} bg-aegis-card">
     {% call picture(c, 'bg-aegis-error/10 text-error' if failed else 'bg-aegis-bg text-aegis-muted') %}
       {% if c.preview and c.preview.kind == "image" %}
-      <img src="{{ c.preview.url }}" alt="{{ c.title }}" loading="lazy" class="h-full w-full object-cover">
+      {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ c.preview.url }}" alt="{{ c.title }}" loading="lazy" class="h-full w-full object-cover">{# djlint:on #}
       {% elif c.state == "working" %}
       {{ icon("spinner", "w-7 h-7 animate-spin") }}
       {% elif failed %}

@@ -14,19 +14,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.media import queries
 from app.services.media.models import MediaJob
+from tests.services._media import OUTPUT, SOURCE, add_jobs
 
 
-async def _job(db: AsyncSession, **fields) -> MediaJob:
-    body = {
-        "profile": "png",
-        "source_key": "sha256/aa/bb/" + "0" * 64,
-        "source_bytes": 100,
-        **fields,
-    }
-    job = MediaJob(**body)
-    db.add(job)
-    await db.flush()
-    return job
+async def _job(db: AsyncSession, **fields: object) -> MediaJob:
+    body = {"profile": "png", "source_key": SOURCE, "source_bytes": 100, **fields}
+    return (await add_jobs(db, MediaJob(**body)))[0]
 
 
 @pytest.mark.asyncio
@@ -46,7 +39,7 @@ async def test_totals_count_each_state_and_sum_both_sides(
         status="done",
         source_bytes=10,
         output_bytes=4,
-        output_key="sha256/cc/dd/" + "1" * 64,
+        output_key=OUTPUT,
     )
     await _job(async_db_session, status="done", source_bytes=1, output_bytes=7)
     await _job(async_db_session, status="failed", source_bytes=20)
@@ -99,6 +92,7 @@ async def test_daily_counts_group_by_day_and_status(
     ]
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_a_job_is_found_by_id_and_a_missing_one_is_none(
     async_db_session: AsyncSession,

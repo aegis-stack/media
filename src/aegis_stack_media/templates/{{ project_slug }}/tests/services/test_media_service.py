@@ -13,9 +13,12 @@ from pathlib import Path
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.core.storage import FilesystemStorage, get_storage, set_storage
+from app.components.database.models import StoredObject
+from app.components.database.stored import purge, store
+from app.core.storage import FilesystemStorage, get_storage
 from app.services.media.models import MediaJob
 from app.services.media.service import MediaService
+from tests.services._media import SOURCE, add_jobs
 
 PNG_1PX = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR42mP4z8CAFTEMLQkA"
@@ -23,17 +26,9 @@ PNG_1PX = base64.b64decode(
 )
 
 
-@pytest.fixture
-def store(tmp_path: Path):
-    """A filesystem store of its own per test: no bucket, no network."""
-    set_storage(FilesystemStorage(tmp_path))
-    yield tmp_path
-    set_storage(None)
-
-
 @pytest.mark.asyncio
 async def test_submit_stores_the_source_and_queues_a_row(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage
 ) -> None:
     job = await MediaService().submit(
         async_db_session,
@@ -46,44 +41,76 @@ async def test_submit_stores_the_source_and_queues_a_row(
     assert job.status == "queued"
     assert job.source_bytes == len(PNG_1PX)
     assert await get_storage().get(job.source_key) == PNG_1PX
+    assert await async_db_session.get(StoredObject, job.source_key) is not None
 
 
 @pytest.mark.asyncio
 async def test_an_unknown_profile_is_refused_before_anything_is_stored(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage, tmp_path: Path
 ) -> None:
     with pytest.raises(KeyError):
         await MediaService().submit(
             async_db_session, b"x", profile_name="nope", source_name="x.png"
         )
-    assert list(Path(store).rglob("*")) == []
+    assert list(tmp_path.rglob("*")) == []
 
 
 @pytest.mark.asyncio
 async def test_an_end_that_keeps_nothing_is_refused_before_anything_is_stored(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage, tmp_path: Path
 ) -> None:
     with pytest.raises(ValueError, match="keeps nothing"):
         await MediaService().submit(
             async_db_session, b"x", profile_name="mp4", source_name="x.mov", end=0.0
         )
-    assert list(Path(store).rglob("*")) == []
+    assert list(tmp_path.rglob("*")) == []
+
+
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
+@pytest.mark.asyncio
+async def test_a_stored_source_is_trimmed_the_same(
+    async_db_session: AsyncSession, files: FilesystemStorage
+) -> None:
+    """The agent's way in names a stored object (a chat attachment, put
+    there without the catalog); its trim is the page's, and the job's key
+    into the catalog finds a row."""
+    key = await files.put(PNG_1PX)
+    job = await MediaService().submit_key(
+        async_db_session, key, profile_name="mp4", end=-20.0
+    )
+    assert job.end == -20.0
+    assert await async_db_session.get(StoredObject, key) is not None
 
 
 @pytest.mark.asyncio
-async def test_a_stored_source_is_trimmed_the_same(
+async def test_a_catalogued_source_is_not_read_to_queue_it(
     async_db_session: AsyncSession,
+    files: FilesystemStorage,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The agent's way in names a stored object; its trim is the page's."""
-    job = await MediaService().submit_key(
-        async_db_session, "sha256/aa/bb/" + "0" * 64, profile_name="mp4", end=-20.0
-    )
-    assert job.end == -20.0
+    """The catalog knows its size: a large video is read once, by the run."""
+    key = await store(async_db_session, PNG_1PX)
+
+    async def unread(_key: str) -> bytes:
+        raise AssertionError("read to queue it")
+
+    monkeypatch.setattr(files, "get", unread)
+    job = await MediaService().submit_key(async_db_session, key, profile_name="mp4")
+    assert job.source_bytes == len(PNG_1PX)
+
+
+@pytest.mark.asyncio
+async def test_a_source_the_store_lacks_is_refused(
+    async_db_session: AsyncSession, files: FilesystemStorage
+) -> None:
+    """Refused when asked, not recorded as a job that fails when run."""
+    with pytest.raises(LookupError):
+        await MediaService().submit_key(async_db_session, SOURCE, profile_name="mp4")
 
 
 @pytest.mark.asyncio
 async def test_run_converts_the_source_and_records_the_result(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage
 ) -> None:
     service = MediaService()
     job = await service.submit(
@@ -97,13 +124,15 @@ async def test_run_converts_the_source_and_records_the_result(
     assert await get_storage().get(done.output_key or "") is not None
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_deleting_a_result_removes_the_file_and_keeps_the_history(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage
 ) -> None:
     """The picture goes, from the bucket and from Recent; the job stays for
     Activity. Keys are content hashes, so a file another job also made is
-    kept until the last one goes."""
+    kept until the last one goes, and its row in the storage catalog with
+    it."""
     service = MediaService()
     made = []
     for _ in range(2):
@@ -118,8 +147,12 @@ async def test_deleting_a_result_removes_the_file_and_keeps_the_history(
 
     await service.delete_result(async_db_session, first.id or 0)
     assert await get_storage().get(key) is not None, "the other one still uses it"
+    assert await async_db_session.get(StoredObject, key) is not None
     await service.delete_result(async_db_session, second.id or 0)
+    assert await get_storage().get(key) is not None, "not until the purge"
+    await purge(async_db_session)
     assert await get_storage().get(key) is None
+    assert await async_db_session.get(StoredObject, key) is None
 
     kept = await service.recent(async_db_session, kept_only=True)
     assert [j.id for j in kept] == []
@@ -134,7 +167,7 @@ async def test_deleting_a_result_removes_the_file_and_keeps_the_history(
 
 @pytest.mark.asyncio
 async def test_a_source_that_has_gone_is_a_failed_job_with_the_reason(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage
 ) -> None:
     service = MediaService()
     job = await service.submit(
@@ -151,7 +184,7 @@ async def test_a_source_that_has_gone_is_a_failed_job_with_the_reason(
 
 @pytest.mark.asyncio
 async def test_a_conversion_that_ffmpeg_refuses_keeps_its_complaint(
-    async_db_session: AsyncSession, store: Path
+    async_db_session: AsyncSession, files: FilesystemStorage
 ) -> None:
     service = MediaService()
     job = await service.submit(
@@ -203,6 +236,7 @@ async def test_update_profile_refuses_what_does_not_fit(
     assert settings["web-gif"]["fps"] != 99
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_an_empty_field_goes_back_to_the_shipped_value(
     async_db_session: AsyncSession,
@@ -224,24 +258,25 @@ async def test_activity_counts_each_day_and_totals_each_profile(
     """Every day drawn, an empty one as zeros; the same numbers both
     frontends chart."""
     from app.core.time import utcnow
-    from app.services.media.models import MediaJob
 
-    for profile, status, output in [
-        ("png", "done", 40),
-        ("png", "failed", None),
-        ("mp3", "done", 10),
-    ]:
-        async_db_session.add(
+    await add_jobs(
+        async_db_session,
+        *(
             MediaJob(
                 profile=profile,
-                source_key="sha256/aa/bb/" + "0" * 64,
+                source_key=SOURCE,
                 source_bytes=100,
                 output_bytes=output,
                 status=status,
                 created_at=utcnow(),
             )
-        )
-    await async_db_session.flush()
+            for profile, status, output in [
+                ("png", "done", 40),
+                ("png", "failed", None),
+                ("mp3", "done", 10),
+            ]
+        ),
+    )
     activity = await MediaService().activity(async_db_session, days=3)
     assert len(activity.days) == 3
     assert [(d.done, d.failed) for d in activity.days] == [(0, 0), (0, 0), (2, 1)]
@@ -263,7 +298,7 @@ def test_a_job_reads_the_same_in_every_frontend() -> None:
     job = MediaJob(
         id=3,
         profile="png",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=2048,
         status="failed",
         error="ffmpeg exited 1",
@@ -303,7 +338,7 @@ def _failed(source_bytes: int, error: str, profile: str = "web-gif") -> MediaJob
     return MediaJob(
         id=1,
         profile=profile,
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=source_bytes,
         status="failed",
         error=error,
@@ -333,7 +368,7 @@ def test_a_finished_row_names_its_download_and_its_markdown() -> None:
     job = MediaJob(
         id=9,
         profile="readme-gif",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_name="demo-recording.mov",
         source_bytes=4096,
         output_bytes=2048,
@@ -347,6 +382,7 @@ def test_a_finished_row_names_its_download_and_its_markdown() -> None:
     assert row["markdown"] == "![demo-recording](demo-recording-readme-gif.gif)"
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_the_estimate_scales_what_the_profile_made_before(
     async_db_session: AsyncSession,
@@ -355,25 +391,20 @@ async def test_the_estimate_scales_what_the_profile_made_before(
     ratio, the trimmed share, and a GIF's cap as this project saved it."""
     service = MediaService()
     assert await service.estimate(async_db_session, "mp4", 1000) is None
-    for profile, out in [("mp4", 40), ("readme-gif", 100), ("png", 300)]:
-        async_db_session.add(
+    await add_jobs(
+        async_db_session,
+        *(
             MediaJob(
                 profile=profile,
-                source_key="sha256/aa/bb/" + "0" * 64,
+                source_key=SOURCE,
                 source_bytes=100,
                 output_bytes=out,
                 status="done",
             )
-        )
-    async_db_session.add(
-        MediaJob(
-            profile="mp4",
-            source_key="sha256/aa/bb/" + "0" * 64,
-            source_bytes=100,
-            status="failed",
-        )
+            for profile, out in [("mp4", 40), ("readme-gif", 100), ("png", 300)]
+        ),
+        MediaJob(profile="mp4", source_key=SOURCE, source_bytes=100, status="failed"),
     )
-    await async_db_session.flush()
     assert (
         await service.estimate(async_db_session, "mp4", 1000, duration=40.0, end=20.0)
         == 200
@@ -390,6 +421,7 @@ async def test_the_estimate_scales_what_the_profile_made_before(
     assert await service.estimate(async_db_session, "png", 10**8) == 300
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_a_run_uses_the_saved_settings_and_the_jobs_own_trim(
     async_db_session: AsyncSession,

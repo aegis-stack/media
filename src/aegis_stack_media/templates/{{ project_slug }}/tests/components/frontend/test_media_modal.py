@@ -15,6 +15,7 @@ from app.services.media.schemas import (
     ProfileView,
 )
 from tests.components.frontend._tree import texts, walk
+from tests.services._media import SOURCE
 
 STATS = MediaStats(jobs=3, done=2, failed=1, source_bytes=300, output_bytes=50)
 ACTIVITY = MediaActivity(
@@ -27,7 +28,7 @@ ACTIVITY = MediaActivity(
 JOB = MediaJob(
     id=7,
     profile="readme-gif",
-    source_key="sha256/aa/bb/" + "0" * 64,
+    source_key=SOURCE,
     source_bytes=1024,
     status="failed",
     error="ffmpeg exited 1",

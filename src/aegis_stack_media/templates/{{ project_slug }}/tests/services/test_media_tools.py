@@ -12,9 +12,11 @@ from __future__ import annotations
 import pytest
 
 from app.core.db import get_async_session
+from app.core.storage import FilesystemStorage, content_key
 from app.core.tools import Refused, get_tool, native_write_tool_names
 from app.services.media import jobs, tools
 from app.services.media.service import MediaService
+from tests.services._media import SOURCE
 
 
 def test_the_tool_is_granted_as_a_write() -> None:
@@ -27,7 +29,7 @@ def test_the_tool_is_granted_as_a_write() -> None:
 
 @pytest.mark.asyncio
 async def test_an_unknown_profile_is_refused_with_the_known_ones() -> None:
-    refused = await tools.media(source="sha256/aa/aa", profile="teapot")
+    refused = await tools.media(source=SOURCE, profile="teapot")
 
     assert isinstance(refused, Refused)
     said = refused.error
@@ -36,8 +38,16 @@ async def test_an_unknown_profile_is_refused_with_the_known_ones() -> None:
 
 
 @pytest.mark.asyncio
+async def test_a_source_the_store_lacks_is_refused(files: FilesystemStorage) -> None:
+    refused = await tools.media(source=content_key(b"never stored"), profile="web-gif")
+
+    assert isinstance(refused, Refused)
+    assert "nothing is stored" in refused.error
+
+
+@pytest.mark.asyncio
 async def test_a_known_profile_queues_and_returns_figures(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, files: FilesystemStorage
 ) -> None:
     sent: list[int] = []
 
@@ -50,7 +60,7 @@ async def test_a_known_profile_queues_and_returns_figures(
 
     monkeypatch.setattr(jobs, "start_conversion", fake_start)
 
-    result = await tools.media(source="sha256/aa/aa", profile="web-gif")
+    result = await tools.media(source=await files.put(b"a clip"), profile="web-gif")
 
     assert not isinstance(result, Refused)
     assert (result.profile, result.status) == ("web-gif", "queued")

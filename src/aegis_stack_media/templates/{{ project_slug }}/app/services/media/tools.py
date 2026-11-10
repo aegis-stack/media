@@ -13,7 +13,7 @@ from app.core.db import get_async_session
 from app.core.tools import Refused, register_tool
 from app.services.media import jobs
 from app.services.media.schemas import ConversionResult
-from app.services.media.service import MediaService, UnknownProfileError
+from app.services.media.service import MediaService
 
 
 async def media(source: str, profile: str) -> ConversionResult | Refused:
@@ -27,7 +27,8 @@ async def media(source: str, profile: str) -> ConversionResult | Refused:
             job = await MediaService().submit_key(
                 session, source, profile_name=profile, source_name=source
             )
-        except UnknownProfileError as exc:
+        except (LookupError, ValueError) as exc:
+            # An unknown profile, a source the store lacks, or not a key.
             return Refused(error=str(exc))
         queued = ConversionResult.model_validate(job, from_attributes=True)
         await session.commit()

@@ -72,7 +72,7 @@
            class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors hover:border-aegis-muted">
       {# Players with controls are interactive content: a click on one
          plays, it does not open the file picker. #}
-      <template x-if="preview && shows === 'image'"><img :src="preview" alt="The chosen file" class="max-h-64 max-w-full rounded object-contain"></template>
+      <template x-if="preview && shows === 'image'">{# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img :src="preview" alt="The chosen file" class="max-h-64 max-w-full rounded object-contain">{# djlint:on #}</template>
       <template x-if="preview && shows === 'video'"><video :src="preview" x-show="!broken" controls muted playsinline preload="metadata"
               @loadedmetadata="length($el)" @error="broken = true; estimate()" class="max-h-64 max-w-full rounded"></video></template>
       <template x-if="preview && shows === 'audio'"><audio :src="preview" controls preload="metadata"

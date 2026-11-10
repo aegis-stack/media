@@ -84,17 +84,12 @@ class MediaService:
         *,
         profile_name: str,
         source_name: str | None = None,
-        source_bytes: int | None = None,
         end: float | None = None,
     ) -> MediaJob:
-        """Record a job for an object already stored, queued."""
+        """Record a job for an object already stored, queued; ``LookupError``
+        when nothing is stored under ``key``."""
         return await convert.submit_key(
-            session,
-            key,
-            profile_name=profile_name,
-            source_name=source_name,
-            source_bytes=source_bytes,
-            end=end,
+            session, key, profile_name=profile_name, source_name=source_name, end=end
         )
 
     async def run(

@@ -65,6 +65,28 @@ OVERSEER_FILES = [
 elsewhere they would import a frontend that is not there."""
 
 
+# The keys ``media_job`` already names, catalogued before its columns key
+# into ``stored_object``: Postgres checks existing rows when a key is
+# added, and a job from before the catalog has no row there. Runs first in
+# the revision, so on a fresh install there is no ``media_job`` yet.
+CATALOG_EXISTING_KEYS = """\
+    bind = op.get_bind()
+    schema = "media" if bind.dialect.name == "postgresql" else None
+    if sa.inspect(bind).has_table("media_job", schema=schema):
+        jobs = f"{schema}.media_job" if schema else "media_job"
+        # Results first: a key that is both keeps the result's type.
+        for key, size, kind in (
+            ("output_key", "output_bytes", "MAX(content_type)"),
+            ("source_key", "source_bytes", "NULL"),
+        ):
+            op.execute(
+                "INSERT INTO stored_object (key, bytes, content_type, created_at) "
+                f"SELECT {key}, MAX(COALESCE({size}, 0)), {kind}, MIN(created_at) "
+                f"FROM {jobs} WHERE {key} IS NOT NULL GROUP BY {key} "
+                "ON CONFLICT (key) DO NOTHING"
+            )"""
+
+
 def _htmx(opts: dict) -> bool:
     """The htmx frontend is present: where the plugin's page can land."""
     return bool(opts.get("include_htmx"))
@@ -91,7 +113,8 @@ def get_spec() -> PluginSpec:
         verified=False,
         # 0.20.0 carries a queue's ``memory`` and the page's template hooks
         # (``page_titled``, a filled ``primary_button``, a ``data-snug``
-        # dialog, the media icons); 0.17.0 ``AgentToolWiring`` (framework
+        # dialog, the media icons) and the storage catalog (``store``,
+        # ``release``); 0.17.0 ``AgentToolWiring`` (framework
         # #1868); 0.16.1 ``overseer_pages`` and gated ``extras``. Refused by
         # version at ``aegis add``, not met as an error on the page. The dev
         # dependency in pyproject.toml is the same floor.
@@ -120,6 +143,7 @@ def get_spec() -> PluginSpec:
                 # DDL on a database that already has this.
                 stamp_signature=("table", "media.media_job"),
                 schema="media",
+                data_body=CATALOG_EXISTING_KEYS,
             ),
         ],
         files=FileManifest(
@@ -130,6 +154,7 @@ def get_spec() -> PluginSpec:
                 "app/components/frontend/dashboard/modals/media_modal.py",
                 "tests/cli/test_media_cli.py",
                 "tests/components/frontend/test_media_modal.py",
+                "tests/services/_media.py",
                 "tests/services/test_media_convert.py",
                 "tests/services/test_media_jobs.py",
                 "tests/services/test_media_layout.py",

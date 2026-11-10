@@ -21,6 +21,8 @@ import tempfile
 
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.components.database.models import StoredObject
+from app.components.database.stored import release, store
 from app.core.storage import get_storage
 from app.core.time import utcnow
 from app.services.media import queries
@@ -294,8 +296,8 @@ async def submit(
     job that could never run.
     """
     _check(profile_name, end)
-    key = await get_storage().put(data, content_type=content_type)
-    return await submit_key(
+    key = await store(session, data, content_type=content_type)
+    return await _queue(
         session,
         key,
         profile_name=profile_name,
@@ -311,21 +313,49 @@ async def submit_key(
     *,
     profile_name: str,
     source_name: str | None = None,
-    source_bytes: int | None = None,
     end: float | None = None,
 ) -> MediaJob:
     """Record a job for an object already in the bucket, queued, not run.
 
     The agent's way in: it names a stored source rather than uploading
-    bytes. Checked first (``_check``), so no row exists for a job that
-    could never run.
+    bytes. One another part put there without the catalog is catalogued
+    here. Checked first (``_check``), and ``LookupError`` for a key the
+    store lacks, so no row exists for a job that could never run.
     """
     _check(profile_name, end)
+    catalogued = await session.get(StoredObject, key)
+    if catalogued is None:
+        data = await get_storage().get(key)
+        if data is None:
+            raise LookupError(f"nothing is stored under {key}")
+        return await submit(
+            session, data, profile_name=profile_name, source_name=source_name, end=end
+        )
+    return await _queue(
+        session,
+        key,
+        profile_name=profile_name,
+        source_name=source_name,
+        source_bytes=catalogued.bytes,
+        end=end,
+    )
+
+
+async def _queue(
+    session: AsyncSession,
+    key: str,
+    *,
+    profile_name: str,
+    source_name: str | None,
+    source_bytes: int,
+    end: float | None,
+) -> MediaJob:
+    """The job's row, queued, for a source already catalogued."""
     job = MediaJob(
         profile=profile_name,
         source_key=key,
         source_name=source_name,
-        source_bytes=source_bytes or 0,
+        source_bytes=source_bytes,
         end=end,
         status="queued",
     )
@@ -363,7 +393,7 @@ async def run(
         )
     except (ffmpeg.FfmpegError, ValueError) as exc:
         return await fail(session, job, str(exc))
-    job.output_key = await get_storage().put(output, content_type=made.content_type)
+    job.output_key = await store(session, output, content_type=made.content_type)
     job.output_bytes = len(output)
     job.content_type = made.content_type
     job.status = "done"
@@ -375,18 +405,15 @@ async def run(
 async def delete_result(session: AsyncSession, media_job_id: int) -> MediaJob:
     """Delete a job's result and keep the job: Activity is the history.
 
-    The object goes from the store only when no other job holds it (keys
-    are content hashes: the same file made twice is one object). The row
-    is changed first, so a store that fails leaves an unused object, never
-    a row pointing at nothing.
+    The object is released (``stored``). The row is changed first, so the
+    job is not its own holder.
     """
     job = await queries.job_by_id(session, media_job_id)
     if job is None or not job.output_key:
         raise LookupError(f"media job {media_job_id} has no result to delete")
     key, job.output_key = job.output_key, None
     await session.flush()
-    if not await queries.key_in_use(session, key):
-        await get_storage().delete(key)
+    await release(session, key)
     return job
 
 

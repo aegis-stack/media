@@ -17,8 +17,12 @@ from fastapi.testclient import TestClient
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.components.database.models import StoredObject
+from app.components.database.stored import store
 from app.components.web_frontend import overseer_media
+from app.core.storage import FilesystemStorage
 from app.services.media.models import MediaJob
+from tests.services._media import OUTPUT, SOURCE, add_jobs
 from tests.web.overseer import sent_events, sign_in, status_with
 
 
@@ -47,7 +51,7 @@ def test_a_running_job_is_marked_watching() -> None:
     job = MediaJob(
         id=4,
         profile="readme-gif",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=1024,
         status="running",
         created_at=datetime(2026, 1, 1),
@@ -61,7 +65,7 @@ def test_a_finished_job_shows_its_output_size() -> None:
     job = MediaJob(
         id=5,
         profile="png",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=1024,
         output_bytes=2048,
         status="done",
@@ -81,8 +85,8 @@ def test_a_finished_result_points_at_the_apps_own_preview() -> None:
     job = MediaJob(
         id=5,
         profile="readme-gif",
-        source_key="sha256/aa/bb/" + "0" * 64,
-        output_key="sha256/cc/dd/" + "1" * 64,
+        source_key=SOURCE,
+        output_key=OUTPUT,
         source_bytes=1024,
         output_bytes=4096,
         content_type="image/gif",
@@ -104,8 +108,8 @@ def test_a_result_a_browser_cannot_show_gets_no_preview() -> None:
     job = MediaJob(
         id=6,
         profile="png",
-        source_key="sha256/aa/bb/" + "0" * 64,
-        output_key="sha256/cc/dd/" + "1" * 64,
+        source_key=SOURCE,
+        output_key=OUTPUT,
         source_bytes=1024,
         output_bytes=4096,
         content_type="application/zip",
@@ -120,7 +124,7 @@ def test_a_job_still_running_has_nothing_to_show_yet() -> None:
     job = MediaJob(
         id=7,
         profile="web-gif",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=1024,
         status="running",
         created_at=datetime(2026, 1, 1),
@@ -143,7 +147,7 @@ def test_a_failed_row_keeps_the_error_out_of_the_row() -> None:
     job = MediaJob(
         id=3,
         profile="web-gif",
-        source_key="sha256/aa/bb/" + "0" * 64,
+        source_key=SOURCE,
         source_bytes=1,
         status="failed",
         error=error,
@@ -166,7 +170,7 @@ def _job(**fields: object) -> MediaJob:
     base: dict[str, object] = {
         "id": 8,
         "profile": "readme-gif",
-        "source_key": "sha256/aa/bb/" + "0" * 64,
+        "source_key": SOURCE,
         "source_name": "demo.mov",
         "source_bytes": 4096,
         "status": "done",
@@ -246,7 +250,7 @@ def test_a_failure_says_why_and_offers_another_go() -> None:
 def test_a_result_is_downloaded_or_copied_into_a_readme() -> None:
     card = overseer_media.card_from(
         _job(
-            output_key="sha256/cc/dd/" + "1" * 64,
+            output_key=OUTPUT,
             output_bytes=2048,
             content_type="image/gif",
         )
@@ -263,15 +267,20 @@ async def test_the_count_names_the_failures_the_gallery_shows(
 ) -> None:
     """ "4 made" above a grid with two failures in it reads as "which 4?";
     a result deleted is not in the grid, so not in the count either."""
-    kept = {"output_bytes": 1024, "output_key": "sha256/cc/dd/" + "1" * 64}
-    for fields in (kept, kept, {"output_bytes": 9}, {"status": "failed"}):
-        async_db_session.add(_job(id=None, **fields))
-    await async_db_session.flush()
+    kept = {"output_bytes": 1024, "output_key": OUTPUT}
+    await add_jobs(
+        async_db_session,
+        *(
+            _job(id=None, **fields)
+            for fields in (kept, kept, {"output_bytes": 9}, {"status": "failed"})
+        ),
+    )
     body = await overseer_media.recent_body(async_db_session)
     assert body["made"] == "2 made, 1 failed · 2.0 KB stored"
     assert len(body["cards"]) == 3
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_the_estimate_waits_for_a_file_and_for_history(
     async_db_session: AsyncSession,
@@ -288,13 +297,15 @@ async def test_the_estimate_waits_for_a_file_and_for_history(
 
     assert await ask(0) == {"file": "", "estimate": ""}
     assert (await ask(1000))["estimate"].startswith("No estimate")
-    async_db_session.add(_job(profile="mp4", source_bytes=1000, output_bytes=500))
-    await async_db_session.flush()
+    await add_jobs(
+        async_db_session, _job(profile="mp4", source_bytes=1000, output_bytes=500)
+    )
     answer = await ask(10_000, end=10.0)
     assert answer["file"] == "demo.mov, 9.8 KB, 00:40"
     assert answer["estimate"] == "Result: about 1.2 KB"
 
 
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_each_section_streams_rather_than_polls(
     async_db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
@@ -328,8 +339,7 @@ async def test_activity_charts_the_jobs_over_one_stream(
 
     from markupsafe import escape
 
-    async_db_session.add(_job(profile="png", output_bytes=40))
-    await async_db_session.flush()
+    await add_jobs(async_db_session, _job(profile="png", output_bytes=40))
     body = (
         await overseer_media.charts_body(async_db_session)
         | await overseer_media.results_body(async_db_session)
@@ -380,7 +390,7 @@ def test_a_result_opens_larger_in_the_one_dialog() -> None:
     with the same Download and Copy markdown as its card."""
     card = overseer_media.card_from(
         _job(
-            output_key="sha256/cc/dd/" + "1" * 64,
+            output_key=OUTPUT,
             output_bytes=2048,
             content_type="image/gif",
         )
@@ -415,7 +425,7 @@ def test_a_finished_result_can_be_deleted_and_asks_first() -> None:
     larger; it opens the confirmation in the dialog, not a request."""
     card = overseer_media.card_from(
         _job(
-            output_key="sha256/cc/dd/" + "1" * 64,
+            output_key=OUTPUT,
             output_bytes=9,
             content_type="image/png",
         )
@@ -432,6 +442,27 @@ def test_a_finished_result_can_be_deleted_and_asks_first() -> None:
     assert overseer_media.card_from(_job(status="failed", error="x"))["delete"] is None
 
 
+@pytest.mark.asyncio
+async def test_deleting_a_result_releases_its_file(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    async_db_session: AsyncSession,
+    async_client_with_db: TestClient,
+    files: FilesystemStorage,
+) -> None:
+    """Released, for the session's purge after its commit (``stored``)."""
+    sign_in(app, monkeypatch, status_with())
+    key = await store(async_db_session, b"a result")
+    (job,) = await add_jobs(async_db_session, _job(id=None, output_key=key))
+
+    response = async_client_with_db.delete(f"{overseer_media.PARTIALS}/output/{job.id}")
+
+    assert response.status_code == 204
+    row = await async_db_session.get(StoredObject, key)
+    assert row is not None and row.released_at is not None
+
+
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 def test_deleting_a_result_that_is_not_there_is_404(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:

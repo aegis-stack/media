@@ -19,8 +19,8 @@
 {% macro _thumb(shot) -%}
 {%- if shot and shot.kind == "image" -%}
 <a href="{{ shot.url }}" target="_blank" rel="noopener">
-  <img src="{{ shot.url }}" alt="" loading="lazy"
-       class="h-12 w-auto rounded border border-aegis-border">
+  {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ shot.url }}" alt="" loading="lazy"
+       class="h-12 w-auto rounded border border-aegis-border">{# djlint:on #}
 </a>
 {%- elif shot -%}
 <span class="text-xs text-aegis-muted">{{ shot.kind }}</span>
