@@ -1,0 +1,17 @@
+{# One result, opened larger in the app's one dialog (``#dialog-body``):
+   the picture at its own size up to the window's, or a player; closing
+   the dialog clears it, which stops a playing one. #}
+{% from "pages/overseer/media/_uses.html" import uses %}
+<figure data-snug class="space-y-3">
+  {% if c.preview.kind == "image" %}
+  {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ c.preview.url }}" alt="{{ c.title }}" class="mx-auto max-h-[80vh] max-w-full rounded">{# djlint:on #}
+  {% elif c.preview.kind == "video" %}
+  <video src="{{ c.preview.url }}" controls autoplay playsinline class="mx-auto max-h-[80vh] max-w-full rounded"></video>
+  {% else %}
+  <audio src="{{ c.preview.url }}" controls autoplay class="w-[min(32rem,80vw)]"></audio>
+  {% endif %}
+  <figcaption class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 text-sm">
+    <span><span class="text-base text-aegis-text">{{ c.title }}</span> <span class="text-aegis-muted">{{ c.meta }}</span></span>
+    {{ uses(c) }}
+  </figcaption>
+</figure>

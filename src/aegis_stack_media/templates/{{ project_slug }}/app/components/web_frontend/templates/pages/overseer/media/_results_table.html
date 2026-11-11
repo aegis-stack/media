@@ -1,0 +1,58 @@
+{# The conversions this project has run, newest first: one table, every
+   result in it, and a row that opens.
+
+   The error of a failed conversion is the one thing nobody needs until
+   they do — a red line under every failure turned the table into a wall of
+   ffmpeg. It lives in the row's detail instead (``data_table(detail=...)``,
+   the same expandable rows the scheduler's history uses), with the command's
+   whole output in a ``pre`` block.
+
+   The stream (``overseer_media.events``) re-sends it when it changes, so
+   statuses and thumbnails arrive without a refresh; the Overview shows
+   its latest rows the same way. #}
+{% from "components/macros/layout.html" import badge, stat_row %}
+{% from "components/macros/table.html" import data_table %}
+{% macro _status_cell(row) -%}
+{{ badge(row.status.label, row.status.tone) }}
+{%- if row.running %}<span class="ml-2 text-xxs text-aegis-muted caps">watching</span>{% endif %}
+{%- endmacro %}
+{% macro _thumb(shot) -%}
+{%- if shot and shot.kind == "image" -%}
+<a href="{{ shot.url }}" target="_blank" rel="noopener">
+  {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ shot.url }}" alt="" loading="lazy"
+       class="h-12 w-auto rounded border border-aegis-border">{# djlint:on #}
+</a>
+{%- elif shot -%}
+<span class="text-xs text-aegis-muted">{{ shot.kind }}</span>
+{%- endif -%}
+{%- endmacro %}
+{% macro _open(row) -%}
+{%- if row.result -%}
+<a href="{{ row.result.url }}" target="_blank" rel="noopener"
+   class="text-aegis-teal hover:underline">{{ row.result.label }}</a>
+{%- endif -%}
+{%- endmacro %}
+{% macro _detail(row) %}
+<div class="space-y-3">
+  {% if row.error %}
+  <div class="space-y-1">
+    <p class="text-xs font-semibold text-error">What went wrong</p>
+    <pre class="code-block">{{ row.error }}</pre>
+  </div>
+  {% endif %}
+  {{ stat_row([("Profile", row.profile), ("In", row.source), ("Out", row.output or "-"), ("When", row.when)]) }}
+</div>
+{% endmacro %}
+<div id="media-results">
+  {{ data_table([
+      {"key": "id", "label": "Id", "kind": "int", "align": "right"},
+      {"key": "profile", "label": "Profile", "kind": "code"},
+      {"key": "status", "label": "Status", "row": True, "render": _status_cell},
+      {"key": "source", "label": "In", "align": "right"},
+      {"key": "output", "label": "Out", "align": "right"},
+      {"key": "preview", "label": "", "render": _thumb},
+      {"key": "result", "label": "Result", "row": True, "render": _open},
+      {"key": "when", "label": "When"},
+    ], rows, row_id="media-job", detail=_detail,
+    empty="Nothing made yet. Start one on the Overview.") }}
+</div>

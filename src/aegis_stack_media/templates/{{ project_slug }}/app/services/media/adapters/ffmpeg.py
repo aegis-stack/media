@@ -14,10 +14,12 @@ disk that the next deploy discards.
 from __future__ import annotations
 
 import asyncio
-import shutil
-import tempfile
 from collections.abc import Sequence
 from pathlib import Path
+import shutil
+import tempfile
+
+from app.core import cpus
 
 DEFAULT_TIMEOUT_SECONDS = 600
 """Ten minutes: the media queue's own job timeout, so a run that hangs is
@@ -111,12 +113,14 @@ async def convert(
     source_suffix: str,
     output_suffix: str,
     pre: Sequence[str] = (),
+    reads: int = 1,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> bytes:
     """Run ffmpeg over ``source`` and return the bytes of the output file.
 
     ``args`` are the options between the input and the output, and ``pre``
-    the ones that must precede ``-i`` (a seek belongs there). The adapter
+    the ones that must precede ``-i`` (a seek belongs there); ``reads``
+    inputs the source that many times, each with ``pre``. The adapter
     owns ``-i``, the paths and ``-y``: those are the process's business,
     not the recipe's.
     """
@@ -125,6 +129,12 @@ async def convert(
         input_path = root / f"input{source_suffix or '.bin'}"
         output_path = root / f"output{output_suffix}"
         input_path.write_bytes(source)
+        # ffmpeg sizes its threads by the host's cores: in a worker allowed
+        # half a CPU it ran 16+, each holding frames, and a 1080p encode
+        # took 1 GB. Before an ``-i`` they are its decoder's, after the
+        # last the encoder's; the filters' are global.
+        n = str(cpus.allowed())
+        reading = ["-threads", n, *pre, "-i", str(input_path)]
         await _run(
             [
                 binary(),
@@ -132,10 +142,14 @@ async def convert(
                 "-hide_banner",
                 "-loglevel",
                 "error",
-                *pre,
-                "-i",
-                str(input_path),
+                "-filter_threads",
+                n,
+                "-filter_complex_threads",
+                n,
+                *(reading * reads),
                 *args,
+                "-threads",
+                n,
                 str(output_path),
             ],
             timeout=timeout,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "aegis-stack-media"
-version = "0.1.0"
+version = "0.1.4"
 description = "Media conversion jobs for Aegis Stack: ffmpeg verbs, profiles, results in the bucket"
 authors = [{ name = "Leonard Bedner" }]
 readme = "README.md"
@@ -19,12 +19,15 @@ keywords = [
     "video",
     "gif",
 ]
-# The floor is the framework that reads a plugin's ``overseer_pages`` and
-# gates its ``extras`` (0.16.1), and that runs a plugin's queue as its own
-# ``worker-<queue>`` container (0.16.0).
-dependencies = [
-    "aegis-stack>=0.17.0",
-]
+# No runtime dependency on aegis-stack: this plugin is installed into a
+# generated project, which pins its own versions and never imports aegis.
+# Asking for the framework here lets its pins win over the project's and the
+# install fails on the first disagreement (``typer`` is the usual one). The
+# floor is still declared — as a dev dependency below for working on the
+# plugin, and in the spec's ``aegis_version`` (0.20.0: the first release
+# that carries everything the plugin uses), which the CLI checks at
+# ``aegis add`` time.
+dependencies = []
 
 [project.urls]
 "Aegis Plugin" = "https://aegis-stack.io/plugins/aegis-stack-media"
@@ -34,6 +37,9 @@ Issues = "https://github.com/aegis-stack/media/issues"
 
 [project.optional-dependencies]
 dev = [
+    # Developing the plugin needs the framework it is written against: the
+    # spec's ``aegis_version`` (plugin.py says what each release carries).
+    "aegis-stack>=0.20.0",
     "pytest>=9.0.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.1.0",

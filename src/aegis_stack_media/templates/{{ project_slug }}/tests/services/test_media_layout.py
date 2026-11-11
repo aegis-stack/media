@@ -34,7 +34,13 @@ CONVENTIONS = {f"{name}.py" for name, (_, kind) in PIECES.items() if kind == "en
 
 OWNERS = {
     "service.py": {"MediaService"},
-    "queries.py": {"job_by_id", "recent_jobs", "totals", "profile_counts"},
+    "queries.py": {
+        "job_by_id",
+        "recent_jobs",
+        "totals",
+        "profile_totals",
+        "daily_counts",
+    },
     "domains/convert.py": {
         "Plan",
         "plan",
@@ -44,6 +50,7 @@ OWNERS = {
         "fail",
         "source_suffix",
     },
+    "domains/activity.py": {"activity", "job_row"},
     "adapters/ffmpeg.py": {"FfmpegError", "binary", "version", "convert"},
     "adapters/profiles.py": {
         "Profile",

@@ -1,0 +1,11 @@
+{# What a result is for, the same on its card and opened larger: the file,
+   named for the source and the profile, the Markdown a README wants
+   (``MediaService.row``), and deleting it, which asks first in the
+   dialog. #}
+{% macro uses(c) %}
+<p class="flex flex-wrap gap-x-1 text-aegis-teal">
+  {% if c.download %}<a href="{{ c.download }}" download="{{ c.filename }}" class="hover:underline">Download</a>{% endif %}
+  {% if c.markdown %}<span class="text-aegis-muted">·</span><button type="button" data-copy="{{ c.markdown }}" class="hover:underline">Copy markdown</button>{% endif %}
+  {% if c.delete %}<span class="text-aegis-muted">·</span><button type="button" hx-get="{{ c.delete }}" hx-target="#dialog-body" class="text-aegis-muted hover:text-error hover:underline">Delete</button>{% endif %}
+</p>
+{% endmacro %}

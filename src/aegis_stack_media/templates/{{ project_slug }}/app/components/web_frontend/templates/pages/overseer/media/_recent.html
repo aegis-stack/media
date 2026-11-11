@@ -1,0 +1,56 @@
+{# What was made, newest first, as things to use: a picture where the
+   browser can show one, Download, and the Markdown a README wants. A
+   failure says why in plain words (``MediaService.row``'s reason); the
+   ffmpeg output is under Activity. Re-sent over SSE as jobs move. #}
+{% from "components/macros/icons.html" import icon %}
+{% from "pages/overseer/media/_uses.html" import uses %}
+{# The picture at the top of a card: a button that opens a finished result
+   larger in the dialog, a plain box otherwise. #}
+{% macro picture(c, tone) %}
+{% set box = "flex h-36 w-full items-center justify-center " ~ tone %}
+{% if c.view %}
+<button type="button" hx-get="{{ c.view }}" hx-target="#dialog-body" aria-label="Open {{ c.title }} larger"
+        class="{{ box }} cursor-zoom-in transition-opacity hover:opacity-90">{{ caller() }}</button>
+{% else %}
+<div class="{{ box }}">{{ caller() }}</div>
+{% endif %}
+{% endmacro %}
+<div class="flex items-baseline justify-between gap-4">
+  <h2 class="text-base text-aegis-text">Recent</h2>
+  <a href="{{ activity_url }}" {{ hx_replace(activity_url, "#overseer-main") }}
+     class="text-sm text-aegis-muted hover:text-aegis-text">{{ made }}</a>
+</div>
+{% if cards %}
+<div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+  {% for c in cards %}
+  {% set failed = c.state == "failed" %}
+  <article class="overflow-hidden rounded-lg border {{ 'border-aegis-error/50' if failed else 'border-aegis-border' }} bg-aegis-card">
+    {% call picture(c, 'bg-aegis-error/10 text-error' if failed else 'bg-aegis-bg text-aegis-muted') %}
+      {% if c.preview and c.preview.kind == "image" %}
+      {# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img src="{{ c.preview.url }}" alt="{{ c.title }}" loading="lazy" class="h-full w-full object-cover">{# djlint:on #}
+      {% elif c.state == "working" %}
+      {{ icon("spinner", "w-7 h-7 animate-spin") }}
+      {% elif failed %}
+      {{ icon("exclamation-triangle", "w-8 h-8") }}
+      {% else %}
+      {{ icon(c.icon, "w-8 h-8") }}
+      {% endif %}
+    {% endcall %}
+    <div class="space-y-1 px-4 py-3 text-sm">
+      <div class="text-base text-aegis-text">{{ c.title }}</div>
+      {% if failed %}
+      <p class="text-error">{{ c.reason }}</p>
+      <label for="media-file" class="cursor-pointer text-aegis-teal hover:underline">Try another file</label>
+      {% elif c.state == "working" %}
+      <p class="text-aegis-muted">Making it… · {{ c.meta }}</p>
+      {% else %}
+      <p class="text-aegis-muted">{{ c.meta }}</p>
+      {{ uses(c) }}
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<p class="mt-3 text-sm text-aegis-muted">Nothing made yet. Drop a file above.</p>
+{% endif %}

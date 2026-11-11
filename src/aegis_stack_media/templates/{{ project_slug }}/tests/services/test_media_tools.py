@@ -9,12 +9,14 @@ guessing is exactly what a model does when a refusal is vague.
 
 from __future__ import annotations
 
-from typing import Any
-
 import pytest
 
-from app.core.tools import get_tool, native_write_tool_names
+from app.core.db import get_async_session
+from app.core.storage import FilesystemStorage, content_key
+from app.core.tools import Refused, get_tool, native_write_tool_names
 from app.services.media import jobs, tools
+from app.services.media.service import MediaService
+from tests.services._media import SOURCE
 
 
 def test_the_tool_is_granted_as_a_write() -> None:
@@ -27,31 +29,39 @@ def test_the_tool_is_granted_as_a_write() -> None:
 
 @pytest.mark.asyncio
 async def test_an_unknown_profile_is_refused_with_the_known_ones() -> None:
-    with pytest.raises(ValueError) as refused:
-        await tools.media(source="sha256/aa/aa", profile="teapot")
+    refused = await tools.media(source=SOURCE, profile="teapot")
 
-    said = str(refused.value)
+    assert isinstance(refused, Refused)
+    said = refused.error
     assert "teapot" in said
     assert "gif" in said  # the stack's profiles, listed for the caller
 
 
 @pytest.mark.asyncio
+async def test_a_source_the_store_lacks_is_refused(files: FilesystemStorage) -> None:
+    refused = await tools.media(source=content_key(b"never stored"), profile="web-gif")
+
+    assert isinstance(refused, Refused)
+    assert "nothing is stored" in refused.error
+
+
+@pytest.mark.asyncio
 async def test_a_known_profile_queues_and_returns_figures(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, files: FilesystemStorage
 ) -> None:
     sent: list[int] = []
 
     async def fake_start(media_job_id: int) -> str:
+        """The row is committed before the worker is handed its id."""
+        async with get_async_session() as session:
+            assert await MediaService().job(session, media_job_id) is not None
         sent.append(media_job_id)
         return "handle"
 
     monkeypatch.setattr(jobs, "start_conversion", fake_start)
 
-    result: dict[str, Any] = await tools.media(
-        source="sha256/aa/aa", profile="web-gif"
-    )
+    result = await tools.media(source=await files.put(b"a clip"), profile="web-gif")
 
-    assert set(result) >= {"id", "status", "profile"}
-    assert result["profile"] == "web-gif"
-    assert result["status"] == "queued"
-    assert sent == [result["id"]]
+    assert not isinstance(result, Refused)
+    assert (result.profile, result.status) == ("web-gif", "queued")
+    assert sent == [result.id]

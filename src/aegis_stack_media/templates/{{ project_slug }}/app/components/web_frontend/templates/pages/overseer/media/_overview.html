@@ -1,24 +1,153 @@
-{# What this project can make, and what it has made: the profiles the
-   plugin ships (a project adds one by editing ``profiles.yml``) and the
-   counts of what each was used for. #}
-{# The macro is aliased: the context calls its own list ``figures`` too. #}
-{% from "components/macros/layout.html" import card, figures as figure_list %}
-{% from "components/macros/table.html" import data_table %}
-{{ figure_list(figures) }}
-<div class="mt-6">
-{% call card(title="Profiles", subtitle="What this project can make, named for the result") %}
-  {{ data_table(
-       [{"key": "name", "label": "Profile", "kind": "code"},
-        {"key": "kind", "label": "Kind"},
-        {"key": "description", "label": "What it makes", "wrap": True}],
-       profiles,
-       empty="No profiles: add one to app/services/media/adapters/profiles.yml") }}
-{% endcall %}
+{# One page, one action: drop a file, pick what you want made, optionally
+   keep only the start, see about how big it comes out, make it. Then what
+   was made, below, as things to use (``_recent.html``, kept live over SSE).
+
+   A choice is a profile named for its result ("GIF for a README"); the
+   profile stays underneath, its settings a line under the cards that
+   "Change" opens in place, each picked from ``FIELD_PRESETS`` and saved
+   for next time. The chosen file is shown in the drop zone from the
+   browser's own copy (nothing is uploaded until Make it); its size, and
+   a video's or a recording's length off that same player, go to the
+   server for the estimate and the file's line.
+
+   A choice says what it is offered for (``data-takes``, the profile's
+   ``takes``); the file's media type says what it is, anything not an
+   image or audio counted as video, which is also what shows before a file
+   is chosen. A choice that no longer fits gives way to the first that
+   does. #}
+{% from "components/macros/form.html" import action, primary_button, select %}
+{% from "components/macros/icons.html" import icon %}
+<div x-data="{
+       pick: '{{ choices[0].name if choices else '' }}',
+       adjust: false,
+       over: false,
+       source: 'video',
+       shows: '',
+       trimming: {{ trimming|tojson|forceescape }},
+       preview: '',
+       broken: false,
+       fits(card) { return card.dataset.takes.split(' ').includes(this.source) },
+       estimate() { this.$nextTick(() => $refs.make.dispatchEvent(new Event('estimate'))) },
+       length(player) {
+         $refs.duration.value = isFinite(player.duration) ? player.duration : '';
+         this.estimate();
+       },
+       async read(input) {
+         const file = input.files[0];
+         if (this.preview) URL.revokeObjectURL(this.preview);
+         this.preview = file ? URL.createObjectURL(file) : '';
+         this.broken = false;
+         const major = file ? file.type.split('/')[0] : '';
+         this.shows = major === 'image' || major === 'audio' ? major : 'video';
+         {# A GIF or an animated WebP moves: offered what a video is, shown
+            as the picture it is. The WebP test is the server's
+            (``webp.animated``): a VP8X header with its animation bit. #}
+         const head = file ? new Uint8Array(await file.slice(0, 21).arrayBuffer()) : new Uint8Array();
+         const animated = String.fromCharCode(...head.slice(12, 16)) === 'VP8X' && (head[20] & 2) > 0;
+         this.source = file && (file.type === 'image/gif' || animated) ? 'video' : this.shows;
+         const cards = [...$refs.make.querySelectorAll('[data-takes]')].filter((card) => this.fits(card));
+         if (!cards.some((card) => card.dataset.choice === this.pick)) this.pick = cards[0]?.dataset.choice ?? '';
+         $refs.size.value = file ? file.size : '';
+         $refs.name.value = file ? file.name : '';
+         $refs.duration.value = '';
+         {# A player reports the length when it has read it (``length``). #}
+         if (!file || this.shows === 'image') this.estimate();
+       },
+     }" class="space-y-8">
+  <form id="media-make" x-ref="make" data-write
+        hx-post="{{ partials }}/convert" hx-encoding="multipart/form-data"
+        hx-target="#overseer-main" hx-swap="innerHTML"
+        hx-disabled-elt="find button[type=submit]" hx-indicator="#media-make-busy"
+        @change="$event.target.type === 'file' ? read($event.target) : estimate()"
+        class="space-y-6">
+    <input type="hidden" name="size" x-ref="size">
+    <input type="hidden" name="name" x-ref="name">
+    <input type="hidden" name="duration" x-ref="duration">
+    <input id="media-file" x-ref="file" type="file" name="file" required
+           accept="video/*,image/*,audio/*" class="sr-only">
+    <label for="media-file"
+           @dragover.prevent="over = true" @dragleave="over = false"
+           @drop.prevent="over = false; $refs.file.files = $event.dataTransfer.files; $refs.file.dispatchEvent(new Event('change', { bubbles: true }))"
+           :class="over ? 'border-aegis-teal bg-aegis-teal/5' : 'border-aegis-border'"
+           class="flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors hover:border-aegis-muted">
+      {# Players with controls are interactive content: a click on one
+         plays, it does not open the file picker. #}
+      <template x-if="preview && shows === 'image'">{# djlint:off H006 -- a result of unknown size; its box is the CSS #}<img :src="preview" alt="The chosen file" class="max-h-64 max-w-full rounded object-contain">{# djlint:on #}</template>
+      <template x-if="preview && shows === 'video'"><video :src="preview" x-show="!broken" controls muted playsinline preload="metadata"
+              @loadedmetadata="length($el)" @error="broken = true; estimate()" class="max-h-64 max-w-full rounded"></video></template>
+      <template x-if="preview && shows === 'audio'"><audio :src="preview" controls preload="metadata"
+              @loadedmetadata="length($el)" @error="estimate()" class="w-full max-w-md"></audio></template>
+      <span x-show="!preview || broken" class="contents">
+        {{ icon("arrow-up-tray", "w-8 h-8 text-aegis-muted") }}
+        <span class="text-base text-aegis-text">Drop a video, recording or image</span>
+      </span>
+      <span class="text-sm text-aegis-muted"><span x-show="preview">Drop another, </span>or <span class="text-aegis-teal">choose a file</span><span id="media-file-facts"></span></span>
+    </label>
+
+    <fieldset class="space-y-3">
+      <legend class="mb-3 text-sm text-aegis-muted">What do you want?</legend>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {% for c in choices %}
+        <label data-choice="{{ c.name }}" data-takes="{{ c.takes|join(' ') }}" x-show="fits($el)"
+               class="cursor-pointer rounded-lg border border-aegis-border px-5 py-4 transition-colors hover:border-aegis-muted has-[:checked]:border-aegis-teal has-[:checked]:bg-aegis-teal/5">
+          <input type="radio" name="profile" value="{{ c.name }}" x-model="pick" class="sr-only" {% if loop.first %}checked{% endif %}>
+          <span class="flex items-center gap-2 text-base text-aegis-text">{{ icon(c.icon, "w-5 h-5") }}{{ c.title }}</span>
+          <span class="mt-1 block text-sm text-aegis-muted">{{ c.description }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    {% for p in settings %}
+    {% set owner = 'form="media-profile-' ~ p.name ~ '"' %}
+    <div x-show="pick === '{{ p.name }}'" class="text-sm">
+      <p x-show="!adjust" class="text-aegis-muted">{{ p.summary }} · <button type="button" @click="adjust = true" class="text-aegis-teal hover:underline">Change</button></p>
+      <div x-show="adjust" x-cloak class="space-y-5 rounded-lg border border-aegis-border bg-aegis-card px-6 py-5">
+        <div class="flex flex-wrap items-center gap-4">
+          <span class="font-mono text-sm text-aegis-muted">{{ p.name }}</span>
+          <input type="text" name="description" value="{{ p.description }}" {{ owner|safe }}
+                 aria-label="What {{ p.name }} makes"
+                 class="min-w-0 flex-1 rounded border border-aegis-border bg-aegis-bg px-2.5 py-1.5 text-sm text-aegis-text">
+        </div>
+        <div class="flex flex-wrap items-end gap-x-6 gap-y-4">
+          {% for field, choice in p.fields %}
+          <label class="block">
+            <span class="block text-xxs text-aegis-muted caps mb-1">{{ choice.label }}</span>
+            {{ select(field, choice.options, selected=choice.selected, blank=choice.blank, attrs=owner) }}
+          </label>
+          {% endfor %}
+          <span class="ml-auto flex items-center gap-2">
+            {{ action("Cancel", owner ~ ' @click="$el.form.reset(); adjust = false"') }}
+            {{ action("Save", owner ~ ' id="media-profile-' ~ p.name ~ '-save"', type="submit", tone="primary") }}
+          </span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+      <span x-show="source !== 'image' && trimming.includes(pick)">{{ select("end", trims, blank=whole|capitalize, label="Use") }}</span>
+      <span hx-get="{{ estimate_url }}" hx-trigger="estimate from:#media-make"
+            hx-include="#media-make" hx-params="profile,size,duration,end,name"
+            hx-target="this" hx-swap="innerHTML"
+            class="text-sm text-aegis-text"></span>
+      <span class="ml-auto flex items-center gap-4">
+        <span id="media-make-busy" class="htmx-indicator text-xs text-aegis-muted">Uploading…</span>
+        {{ primary_button("Make it", type="submit", filled=True) }}
+      </span>
+    </div>
+  </form>
+
+  {# Each profile's settings post through this form, though they sit
+     under the cards: a form inside a form is not one, and ``form=``
+     keeps a profile's ``end`` out of the job's own. #}
+  {% for p in settings %}
+  <form id="media-profile-{{ p.name }}" data-write hx-post="{{ partials }}/profiles/{{ p.name }}"
+        hx-target="#overseer-main" hx-swap="innerHTML"
+        hx-disabled-elt="#media-profile-{{ p.name }}-save"></form>
+  {% endfor %}
+
+  <section hx-ext="sse" sse-connect="{{ events }}">
+    <div sse-swap="{{ recent_event }}" hx-target="this">{% include "pages/overseer/media/_recent.html" %}</div>
+  </section>
 </div>
-{% if used %}
-<div class="mt-6">
-{% call card(title="Most used", subtitle="Which profiles this project actually reaches for") %}
-  {{ data_table([{"key": "label", "label": "Profile"}, {"key": "value", "label": "Jobs", "align": "right"}], used) }}
-{% endcall %}
-</div>
-{% endif %}

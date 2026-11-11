@@ -1,48 +1,91 @@
-# Conversion profiles this project offers.
+# Conversion profiles this project offers, in the order the picker shows them.
 #
-# A profile is the result you want, not a list of flags: the kind says
-# which ffmpeg recipe runs, and the numbers say how. Add one here and it
+# A profile is the result you want, not a list of flags: the title says
+# what you get ("GIF for a README"), the description how it comes out, the
+# kind which ffmpeg recipe runs, and the numbers how. Add one here and it
 # appears in the Media page, the CLI and the picker with no code change.
 #
-#   kind: gif | audio | image | thumbnail | video
+#   kind: gif | audio | image | jpeg | thumbnail | video
+#   takes: what it is offered for (video, image, audio); video when absent
 #   gif:       fps, width, max_bytes (retried smaller until it fits)
 #   audio:     bitrate
-#   image:     width
-#   thumbnail: at (seconds), width
-#   video:     crf (lower is better and bigger)
-#   any kind:  start, end (seconds) to trim
+#   image:     at (seconds in), width (none keeps the size)
+#   jpeg:      width (never wider than the source)
+#   thumbnail: at (seconds in), width
+#   video:     crf (lower is better and bigger), width (never wider than the source)
+#   the rest:  start, end (seconds) to trim; one frame has nothing to trim
 
 readme-gif:
-  description: README demo GIF - 12 fps, 960 px wide, under 5 MB
+  title: GIF for a README
+  description: Sharp, under 5 MB
   kind: gif
   fps: 12
   width: 960
   max_bytes: 5000000
 
 web-gif:
-  description: Small GIF for a page or a message - 15 fps, 640 px, under 2 MB
+  title: GIF for chat or a post
+  description: Small, under 2 MB
   kind: gif
   fps: 15
   width: 640
   max_bytes: 2000000
 
-mp3:
-  description: The soundtrack, as 192 kbit/s MP3
-  kind: audio
-  bitrate: 192k
+mp4:
+  title: Video for the web
+  description: MP4 that plays anywhere
+  kind: video
+  crf: 23
+
+# X takes up to 1920x1200, autoplays a video muted and loops a short one:
+# the sharp way to post what would have been a GIF.
+x-video:
+  title: Video for X
+  description: H.264, up to 1080p, loops in the feed
+  kind: video
+  crf: 20
+  width: 1920
 
 png:
-  description: One frame as a 1600 px wide PNG
+  title: Screenshot from it
+  description: One frame, full size
   kind: image
+  at: 1.0
   width: 1600
 
 thumb:
-  description: A 640 px wide PNG one second in
+  title: Thumbnail
+  description: Small preview image
   kind: thumbnail
   at: 1.0
   width: 640
 
-mp4:
-  description: H.264 MP4 at CRF 23, faststart for the web
-  kind: video
-  crf: 23
+mp3:
+  title: Just the audio
+  description: MP3
+  kind: audio
+  takes: [video, audio]
+  bitrate: 192k
+
+# For a still: the picture smaller, as a PNG, or as a preview.
+
+photo-jpg:
+  title: Smaller image
+  description: JPEG, up to 1600 px wide
+  kind: jpeg
+  takes: [image]
+  width: 1600
+
+photo-png:
+  title: PNG
+  description: Same picture, lossless
+  kind: image
+  takes: [image]
+
+photo-thumb:
+  title: Thumbnail
+  description: Small preview image
+  kind: thumbnail
+  takes: [image]
+  at: 0
+  width: 640

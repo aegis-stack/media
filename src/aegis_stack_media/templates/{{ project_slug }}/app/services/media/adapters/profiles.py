@@ -22,11 +22,37 @@ import yaml
 
 PROFILES_FILE = Path(__file__).with_name("profiles.yml")
 
-Kind = Literal["gif", "audio", "image", "thumbnail", "video"]
+Kind = Literal["gif", "audio", "image", "jpeg", "thumbnail", "video"]
+Source = Literal["video", "image", "audio"]
+
+TRIM_FIELDS: tuple[str, ...] = ("start", "end")
+"""Empty means the whole clip."""
+FIELDS: dict[str, tuple[str, ...]] = {
+    "gif": ("fps", "width", "max_bytes", *TRIM_FIELDS),
+    "audio": ("bitrate", *TRIM_FIELDS),
+    "image": ("at", "width"),
+    "jpeg": ("width",),
+    "thumbnail": ("at", "width"),
+    "video": ("crf", "width", *TRIM_FIELDS),
+}
+"""The settings each kind uses, so a gif offers no crf and an mp3 no width.
+A kind without the trim makes one frame: the one ``at`` picks, or the first."""
+TRIMS = frozenset(kind for kind, fields in FIELDS.items() if "end" in fields)
 
 
-class UnknownProfileError(KeyError):
-    """A profile name the project does not have."""
+class UnknownProfileError(KeyError, ValueError):
+    """A profile name the project does not have: a lookup that missed, and
+    a bad value a form or a tool says back as it is."""
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
+def fault(exc: ValidationError) -> str:
+    """The first thing a profile's settings got wrong, field first."""
+    first = exc.errors()[0]
+    where = ".".join(str(part) for part in first["loc"]) or "(profile)"
+    return f"{where}: {first['msg']}"
 
 
 class Profile(BaseModel):
@@ -35,20 +61,25 @@ class Profile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     kind: Kind
+    title: str = ""
+    """What you get, as the picker offers it ("GIF for a README")."""
     description: str = ""
+    takes: tuple[Source, ...] = ("video",)
+    """The files it is offered for, by the first half of their media type."""
     # gif
     fps: int | None = Field(default=None, gt=0, le=60)
     width: int | None = Field(default=None, gt=0)
     max_bytes: int | None = Field(default=None, gt=0)
     # audio
     bitrate: str | None = None
-    # thumbnail
+    # image, thumbnail: the frame, seconds in
     at: float | None = Field(default=None, ge=0.0)
     # video
     crf: int | None = Field(default=None, ge=0, le=51)
-    # every kind
+    # every kind with a length; a negative ``end`` is the last that many
+    # seconds (``MediaJob.end``), and ``start`` goes unused
     start: float | None = Field(default=None, ge=0.0)
-    end: float | None = Field(default=None, ge=0.0)
+    end: float | None = None
 
 
 def read(path: Path | None = None) -> dict[str, Profile]:
@@ -69,11 +100,7 @@ def read(path: Path | None = None) -> dict[str, Profile]:
         try:
             found[str(name)] = Profile.model_validate(body or {})
         except ValidationError as exc:
-            first = exc.errors()[0]
-            where = ".".join(str(part) for part in first["loc"]) or "(profile)"
-            raise ValueError(
-                f"{source.name}: profile {name!r}, {where}: {first['msg']}"
-            ) from None
+            raise ValueError(f"{source.name}: profile {name!r}, {fault(exc)}") from None
     return found
 
 

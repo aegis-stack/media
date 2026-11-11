@@ -7,54 +7,45 @@ own SELECT.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.media import queries
 from app.services.media.models import MediaJob
+from tests.services._media import OUTPUT, SOURCE, add_jobs
 
 
-async def _job(db: AsyncSession, **fields) -> MediaJob:
-    body = {
-        "profile": "png",
-        "source_key": "sha256/aa/bb/" + "0" * 64,
-        "source_bytes": 100,
-        **fields,
-    }
-    job = MediaJob(**body)
-    db.add(job)
-    await db.flush()
-    return job
+async def _job(db: AsyncSession, **fields: object) -> MediaJob:
+    body = {"profile": "png", "source_key": SOURCE, "source_bytes": 100, **fields}
+    return (await add_jobs(db, MediaJob(**body)))[0]
 
 
 @pytest.mark.asyncio
 async def test_an_empty_store_says_zero_rather_than_failing(
     async_db_session: AsyncSession,
 ) -> None:
-    jobs, done, failed, source_bytes, output_bytes, last = await queries.totals(
-        async_db_session
-    )
-    assert (jobs, done, failed, source_bytes, output_bytes, last) == (
-        0,
-        0,
-        0,
-        0,
-        0,
-        None,
-    )
+    assert await queries.totals(async_db_session) == (0, 0, 0, 0, 0, 0, None)
 
 
 @pytest.mark.asyncio
 async def test_totals_count_each_state_and_sum_both_sides(
     async_db_session: AsyncSession,
 ) -> None:
-    await _job(async_db_session, status="done", source_bytes=10, output_bytes=4)
+    """A result deleted is still done; it is no longer kept or stored."""
+    await _job(
+        async_db_session,
+        status="done",
+        source_bytes=10,
+        output_bytes=4,
+        output_key=OUTPUT,
+    )
+    await _job(async_db_session, status="done", source_bytes=1, output_bytes=7)
     await _job(async_db_session, status="failed", source_bytes=20)
     await _job(async_db_session, status="queued", source_bytes=30)
-    jobs, done, failed, source_bytes, output_bytes, _ = await queries.totals(
-        async_db_session
-    )
-    assert (jobs, done, failed, source_bytes, output_bytes) == (3, 1, 1, 60, 4)
+    *figures, _ = await queries.totals(async_db_session)
+    assert figures == [4, 2, 1, 1, 61, 4]
 
 
 @pytest.mark.asyncio
@@ -70,17 +61,38 @@ async def test_recent_jobs_are_newest_first_and_filter_by_status(
 
 
 @pytest.mark.asyncio
-async def test_profile_counts_group_by_profile(
+async def test_profile_totals_count_and_sum_each_profile(
     async_db_session: AsyncSession,
 ) -> None:
-    await _job(async_db_session, profile="readme-gif")
-    await _job(async_db_session, profile="readme-gif")
+    await _job(async_db_session, profile="readme-gif", output_bytes=5)
+    await _job(async_db_session, profile="readme-gif", output_bytes=7)
     await _job(async_db_session, profile="mp3")
-    counts = dict(await queries.profile_counts(async_db_session))
-    assert counts["readme-gif"] == 2
-    assert counts["mp3"] == 1
+    totals = {
+        name: (count, source, output)
+        for name, count, source, output in await queries.profile_totals(
+            async_db_session
+        )
+    }
+    assert totals == {"readme-gif": (2, 200, 12), "mp3": (1, 100, 0)}
 
 
+@pytest.mark.asyncio
+async def test_daily_counts_group_by_day_and_status(
+    async_db_session: AsyncSession,
+) -> None:
+    day = datetime(2026, 10, 28, 9, 0)
+    await _job(async_db_session, status="done", created_at=day)
+    await _job(async_db_session, status="done", created_at=day + timedelta(hours=3))
+    await _job(async_db_session, status="failed", created_at=day + timedelta(days=1))
+    await _job(async_db_session, status="done", created_at=day - timedelta(days=30))
+    counts = await queries.daily_counts(async_db_session, since=day - timedelta(days=1))
+    assert sorted(counts) == [
+        ("2026-10-28", "done", 2),
+        ("2026-10-29", "failed", 1),
+    ]
+
+
+@pytest.mark.queryspy(allow_n_plus_one=True)  # each call is the scenario
 @pytest.mark.asyncio
 async def test_a_job_is_found_by_id_and_a_missing_one_is_none(
     async_db_session: AsyncSession,

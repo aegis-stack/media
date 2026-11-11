@@ -4,7 +4,7 @@ requires-python = ">=3.11"
 
 [[package]]
 name = "aegis-stack"
-version = "0.17.0"
+version = "0.20.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "copier" },
@@ -18,21 +18,19 @@ dependencies = [
     { name = "typer" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/dc/1e3295d1e08101b941533fc33e7d5753d1de79c16abe94c525135396adb0/aegis_stack-0.17.0.tar.gz", hash = "sha256:151174d882e83aebe405f044ada34df908e30def91b170dd58a589708678e5e6", size = 9446336, upload-time = "2026-10-29T01:43:47.742Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/d1/8567dd26f3164f5402fc4c10f2a1ff11ba3d7d7ca51462d3ebbf86260cf3/aegis_stack-0.20.0.tar.gz", hash = "sha256:e0db2d735054b3892b052e93c2aabd2cbb011e21718a18d43b2ef8d1a377e21d", size = 9668054, upload-time = "2026-11-11T19:02:13.456Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/15/9e/cea4a0d791a1b80338197a860a986a639897a250fbfe3f974c110c3ce61b/aegis_stack-0.17.0-py3-none-any.whl", hash = "sha256:e94fe9078f01bdae8977a40a0f5a7bc1f5384d6ad1693ba0643959052e658a1a", size = 10824550, upload-time = "2026-10-29T01:43:44.605Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/77/98cc11a1e44acc71d635d16b5d3b7348f114cca638d420087828aae286d6/aegis_stack-0.20.0-py3-none-any.whl", hash = "sha256:90b6892e7d284c3c6a32f9c4702c263c11fbd8e372a0737fd3744d5b5adfe928", size = 11070686, upload-time = "2026-11-11T19:02:10.342Z" },
 ]
 
 [[package]]
 name = "aegis-stack-media"
-version = "0.1.0"
+version = "0.1.4"
 source = { editable = "." }
-dependencies = [
-    { name = "aegis-stack" },
-]
 
 [package.optional-dependencies]
 dev = [
+    { name = "aegis-stack" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -41,7 +39,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aegis-stack", specifier = ">=0.17.0" },
+    { name = "aegis-stack", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.7.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
