@@ -2,7 +2,8 @@
 
 A profile names the result you want ("README GIF, 12 fps, 960 px, under
 5 MB"), not a list of flags. The YAML holds the few numbers that vary;
-the conversion domain turns the kind and its numbers into argv, so a
+the recipe (``domains/recipe.py``) turns the kind and its numbers into
+argv, so a
 project can add a profile without writing Python and a new ffmpeg option
 has one home.
 
@@ -17,7 +18,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 import yaml
 
 PROFILES_FILE = Path(__file__).with_name("profiles.yml")
@@ -35,9 +36,27 @@ FIELDS: dict[str, tuple[str, ...]] = {
     "thumbnail": ("at", "width"),
     "video": ("crf", "width", *TRIM_FIELDS),
 }
-"""The settings each kind uses, so a gif offers no crf and an mp3 no width.
-A kind without the trim makes one frame: the one ``at`` picks, or the first."""
+"""The settings each kind uses, so a gif offers no crf and an mp3 no width;
+any other is refused by name (``Profile``). A kind without the trim makes
+one frame: the one ``at`` picks, or the first. A profile only for stills
+has no ``at`` either (``profile_fields``): a picture has no second to seek to."""
 TRIMS = frozenset(kind for kind, fields in FIELDS.items() if "end" in fields)
+ONE_FRAME = frozenset(kind for kind, fields in FIELDS.items() if "at" in fields)
+"""Kinds that pick their frame with ``at``: one picture, whatever the
+clip's length."""
+_SETTINGS = frozenset(field for fields in FIELDS.values() for field in fields)
+
+
+def profile_fields(kind: str, takes: tuple[str, ...]) -> tuple[str, ...]:
+    """The settings a profile uses (``FIELDS``), for the files it takes."""
+    used = FIELDS.get(kind, ())
+    return tuple(f for f in used if f != "at") if takes == ("image",) else used
+
+
+def unused(kind: str, takes: tuple[str, ...]) -> frozenset[str]:
+    """The settings a profile does not take: refused on it, and not read
+    from a project's saved settings for it."""
+    return _SETTINGS - set(profile_fields(kind, takes))
 
 
 class UnknownProfileError(KeyError, ValueError):
@@ -48,11 +67,13 @@ class UnknownProfileError(KeyError, ValueError):
         return str(self.args[0]) if self.args else ""
 
 
-def fault(exc: ValidationError) -> str:
-    """The first thing a profile's settings got wrong, field first."""
+def _fault(exc: ValidationError) -> str:
+    """The first thing a profile's settings got wrong, field first; a rule
+    across fields (``Profile``'s own) says only what it raised."""
     first = exc.errors()[0]
-    where = ".".join(str(part) for part in first["loc"]) or "(profile)"
-    return f"{where}: {first['msg']}"
+    said = str(first.get("ctx", {}).get("error") or first["msg"])
+    where = ".".join(str(part) for part in first["loc"])
+    return f"{where}: {said}" if where else said
 
 
 class Profile(BaseModel):
@@ -81,6 +102,33 @@ class Profile(BaseModel):
     start: float | None = Field(default=None, ge=0.0)
     end: float | None = None
 
+    @model_validator(mode="after")
+    def _fits_its_kind(self) -> Profile:
+        """A setting the profile does not use (``profile_fields``) is refused, not
+        ignored."""
+        extra = unused(self.kind, self.takes)
+        named = [
+            f
+            for f in type(self).model_fields
+            if f in extra and getattr(self, f) is not None
+        ]
+        if named:
+            raise ValueError(f"{self.kind} takes no {', '.join(named)}")
+        if self.end == 0:
+            raise ValueError("end: 0 seconds keeps nothing")
+        return self
+
+
+def checked(settings: dict[str, object], end: float | None = None) -> Profile:
+    """``settings`` as a profile, with one job's own ``end`` (``MediaJob.end``)
+    in place of its trim when given. ``ValueError`` says what does not fit."""
+    if end is not None:
+        settings = {**settings, "start": None, "end": end}
+    try:
+        return Profile.model_validate(settings)
+    except ValidationError as exc:
+        raise ValueError(_fault(exc)) from None
+
 
 def read(path: Path | None = None) -> dict[str, Profile]:
     """Every profile in ``path`` (the shipped file by default).
@@ -98,9 +146,9 @@ def read(path: Path | None = None) -> dict[str, Profile]:
     found: dict[str, Profile] = {}
     for name, body in raw.items():
         try:
-            found[str(name)] = Profile.model_validate(body or {})
-        except ValidationError as exc:
-            raise ValueError(f"{source.name}: profile {name!r}, {fault(exc)}") from None
+            found[str(name)] = checked(body or {})
+        except ValueError as exc:
+            raise ValueError(f"{source.name}: profile {name!r}, {exc}") from None
     return found
 
 

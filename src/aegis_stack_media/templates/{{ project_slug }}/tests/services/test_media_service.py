@@ -45,23 +45,32 @@ async def test_submit_stores_the_source_and_queues_a_row(
 
 
 @pytest.mark.asyncio
-async def test_an_unknown_profile_is_refused_before_anything_is_stored(
-    async_db_session: AsyncSession, files: FilesystemStorage, tmp_path: Path
+@pytest.mark.parametrize(
+    ("profile_name", "end", "refused", "said"),
+    [
+        ("nope", None, KeyError, "unknown media profile"),
+        ("mp4", 0.0, ValueError, "keeps nothing"),
+        ("png", -1.0, ValueError, "image takes no end"),
+    ],
+)
+async def test_a_job_that_could_never_run_is_refused_before_anything_is_stored(
+    async_db_session: AsyncSession,
+    files: FilesystemStorage,
+    tmp_path: Path,
+    profile_name: str,
+    end: float | None,
+    refused: type[Exception],
+    said: str,
 ) -> None:
-    with pytest.raises(KeyError):
+    """An unknown profile, a trim that keeps nothing, or one on a still (one
+    frame at the profile's ``at``, which a trim would not change)."""
+    with pytest.raises(refused, match=said):
         await MediaService().submit(
-            async_db_session, b"x", profile_name="nope", source_name="x.png"
-        )
-    assert list(tmp_path.rglob("*")) == []
-
-
-@pytest.mark.asyncio
-async def test_an_end_that_keeps_nothing_is_refused_before_anything_is_stored(
-    async_db_session: AsyncSession, files: FilesystemStorage, tmp_path: Path
-) -> None:
-    with pytest.raises(ValueError, match="keeps nothing"):
-        await MediaService().submit(
-            async_db_session, b"x", profile_name="mp4", source_name="x.mov", end=0.0
+            async_db_session,
+            b"x",
+            profile_name=profile_name,
+            source_name="x.mov",
+            end=end,
         )
     assert list(tmp_path.rglob("*")) == []
 
@@ -212,12 +221,29 @@ async def test_update_profile_saves_an_override_the_settings_then_show(
 
 
 @pytest.mark.asyncio
+async def test_a_saved_setting_the_profile_does_not_use_is_not_applied(
+    async_db_session: AsyncSession,
+) -> None:
+    """A row saved before a kind changed (or posted by hand) keeps a column
+    the profile does not take: it is not one of its settings, so the job
+    and the page still resolve."""
+    from app.services.media.domains import convert
+    from app.services.media.models import MediaProfile
+
+    async_db_session.add(MediaProfile(name="thumb", end=5.0, width=320))
+    await async_db_session.flush()
+    profile = await convert.resolve(async_db_session, "thumb")
+    assert (profile.end, profile.width) == (None, 320)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("name", "changes", "said"),
     [
         ("web-gif", {"fps": "fast"}, "web-gif: fps"),
         ("web-gif", {"fps": "99"}, "web-gif: fps"),
         ("nope", {"fps": "7"}, "unknown media profile 'nope'"),
+        ("thumb", {"end": "5"}, "thumb: thumbnail takes no end"),
     ],
 )
 async def test_update_profile_refuses_what_does_not_fit(
@@ -319,9 +345,10 @@ def test_profiles_are_named_for_what_you_get_in_the_files_order() -> None:
 
 
 def test_a_still_is_offered_what_a_still_can_become() -> None:
-    """A PNG is not offered a video or its audio. The image thumbnail seeks
-    to 0: a still has no second 1, and ffmpeg says so by making nothing."""
+    """A PNG is not offered a video or its audio. The image thumbnail reads
+    frame 0: a still has no second 1, and ffmpeg says so by making nothing."""
     from app.services.media.adapters import profiles
+    from app.services.media.domains import recipe
 
     views = MediaService().profiles()
     takes = {
@@ -329,7 +356,7 @@ def test_a_still_is_offered_what_a_still_can_become() -> None:
     }
     assert takes["image"] == ["photo-jpg", "photo-png", "photo-thumb"]
     assert takes["audio"] == ["mp3"]
-    assert profiles.get("photo-thumb").at == 0
+    assert recipe.window(profiles.get("photo-thumb")) == {"at": 0.0}
 
 
 def _failed(source_bytes: int, error: str, profile: str = "web-gif") -> MediaJob:

@@ -18,7 +18,7 @@ import pytest
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.services.media.adapters import ffmpeg, profiles, webp
-from app.services.media.domains import convert
+from app.services.media.domains import convert, recipe
 from tests.services._media import SOURCE
 
 PNG_1PX = base64.b64decode(
@@ -46,7 +46,7 @@ def test_a_gif_plan_is_the_palette_pass_at_the_profiles_numbers() -> None:
     """The palette is made from one read of the source and used on a second
     (``reads``), so frames stream: one read queued a 60 s clip's every
     frame, 1.6 GB, until its palette was done."""
-    made = convert.plan(profiles.Profile(kind="gif", fps=12, width=960))
+    made = recipe.plan(profiles.Profile(kind="gif", fps=12, width=960))
     graph = made.options[made.options.index("-filter_complex") + 1]
     look = "fps=12,scale=960:-1:flags=lanczos"
     assert graph == f"[0:v]{look},palettegen[p];[1:v]{look}[v];[v][p]paletteuse"
@@ -56,7 +56,7 @@ def test_a_gif_plan_is_the_palette_pass_at_the_profiles_numbers() -> None:
 
 
 def test_audio_drops_the_video_and_names_its_bitrate() -> None:
-    made = convert.plan(profiles.Profile(kind="audio", bitrate="128k"))
+    made = recipe.plan(profiles.Profile(kind="audio", bitrate="128k"))
     assert "-vn" in made.options
     assert made.options[made.options.index("-b:a") + 1] == "128k"
     assert made.suffix == ".mp3"
@@ -65,22 +65,25 @@ def test_audio_drops_the_video_and_names_its_bitrate() -> None:
 def test_a_thumbnail_seeks_before_the_input() -> None:
     """``-ss`` after ``-i`` decodes everything before the frame: the whole
     point of a thumbnail is that it does not."""
-    made = convert.plan(profiles.Profile(kind="thumbnail", at=2.5, width=640))
+    made = recipe.plan(profiles.Profile(kind="thumbnail", at=2.5, width=640))
     assert made.pre == ("-ss", "2.5")
     assert "-frames:v" in made.options
 
 
 def test_a_screenshot_seeks_to_its_frame_too() -> None:
-    made = convert.plan(profiles.Profile(kind="image", at=1.0, width=1600))
+    made = recipe.plan(profiles.Profile(kind="image", at=1.0, width=1600))
     assert made.pre == ("-ss", "1")
 
 
-def test_one_frame_ignores_the_trim() -> None:
+def test_one_frame_takes_no_trim() -> None:
     """A kind with no trim fields (``profiles.FIELDS``) takes one frame:
-    a jpeg its first, never the whole clip's worth."""
-    made = convert.plan(profiles.Profile(kind="thumbnail", at=2.5, start=1.0, end=5.0))
+    the one ``at`` picks, or a jpeg its first, never a clip's worth."""
+    made = recipe.plan(profiles.Profile(kind="thumbnail", at=2.5))
     assert made.pre == ("-ss", "2.5") and "-t" not in made.options
-    assert convert.window(profiles.Profile(kind="jpeg", end=-5.0)) == {"at": 0.0}
+    assert recipe.window(profiles.Profile(kind="jpeg")) == {"at": 0.0}
+    # A still's thumbnail is its one frame, not a second in.
+    still = profiles.Profile(kind="thumbnail", takes=("image",))
+    assert recipe.window(still) == {"at": 0.0}
 
 
 def test_the_screenshot_is_shipped_a_second_in() -> None:
@@ -89,14 +92,14 @@ def test_the_screenshot_is_shipped_a_second_in() -> None:
 
 def test_a_smaller_image_is_a_jpeg_that_never_grows() -> None:
     """``min(w,iw)``: a picture narrower than the width is left its size."""
-    made = convert.plan(profiles.Profile(kind="jpeg", width=1600))
+    made = recipe.plan(profiles.Profile(kind="jpeg", width=1600))
     assert "scale='min(1600,iw)':-2:flags=lanczos" in made.options
     assert "-q:v" in made.options
     assert (made.suffix, made.content_type) == (".jpg", "image/jpeg")
 
 
 def test_an_image_with_no_width_keeps_its_size() -> None:
-    made = convert.plan(profiles.Profile(kind="image"))
+    made = recipe.plan(profiles.Profile(kind="image"))
     assert "-vf" not in made.options and made.suffix == ".png"
 
 
@@ -104,7 +107,7 @@ def test_a_video_is_one_phones_and_feeds_play() -> None:
     """A GIF or a screen recording comes in as RGB: left alone, x264 keeps
     it as 4:4:4, which X, Safari and iOS refuse, and it rejects an odd
     side outright."""
-    made = convert.plan(profiles.Profile(kind="video"))
+    made = recipe.plan(profiles.Profile(kind="video"))
     assert made.options[made.options.index("-pix_fmt") + 1] == "yuv420p"
     assert made.options[made.options.index("-vf") + 1] == (
         "scale='trunc(iw/2)*2':-2:flags=lanczos"
@@ -114,25 +117,25 @@ def test_a_video_is_one_phones_and_feeds_play() -> None:
 def test_a_video_for_x_is_never_wider_than_x_takes() -> None:
     x = profiles.get("x-video")
     assert (x.kind, x.width) == ("video", 1920)
-    made = convert.plan(x)
+    made = recipe.plan(x)
     assert "scale='trunc(min(1920,iw)/2)*2':-2:flags=lanczos" in made.options
 
 
 def test_a_trim_becomes_a_seek_and_a_duration() -> None:
-    made = convert.plan(profiles.Profile(kind="video", start=5.0, end=12.5))
+    made = recipe.plan(profiles.Profile(kind="video", start=5.0, end=12.5))
     assert made.pre == ("-ss", "5")
     assert made.options[made.options.index("-t") + 1] == "7.5"
 
 
 def test_the_first_seconds_are_a_duration_alone() -> None:
-    made = convert.plan(profiles.Profile(kind="video", end=5.0))
+    made = recipe.plan(profiles.Profile(kind="video", end=5.0))
     assert made.pre == () and made.options[made.options.index("-t") + 1] == "5"
 
 
 def test_the_last_seconds_are_a_seek_from_the_end() -> None:
     """A negative ``end`` is ffmpeg's own ``-sseof``: no length needs
     knowing first."""
-    made = convert.plan(profiles.Profile(kind="video", start=2.0, end=-20.0))
+    made = recipe.plan(profiles.Profile(kind="video", start=2.0, end=-20.0))
     assert made.pre == ("-sseof", "-20") and "-t" not in made.options
 
 
@@ -149,9 +152,18 @@ async def test_a_jobs_end_replaces_the_profiles_trim(
     assert (profile.start, profile.end) == (None, -5.0)
 
 
+@pytest.mark.asyncio
+async def test_a_trim_on_a_still_is_refused_wherever_it_is_resolved(
+    async_db_session: AsyncSession,
+) -> None:
+    """The estimate and the run resolve a job's profile without ``submit``."""
+    with pytest.raises(ValueError, match="image takes no end"):
+        await convert.resolve(async_db_session, "png", -1.0)
+
+
 def test_the_source_suffix_comes_from_the_name_it_arrived_with() -> None:
-    assert convert.source_suffix("Demo.MOV") == ".mov"
-    assert convert.source_suffix(None) == ""
+    assert recipe.source_suffix("Demo.MOV") == ".mov"
+    assert recipe.source_suffix(None) == ""
 
 
 @pytest.mark.asyncio
@@ -160,9 +172,9 @@ async def test_a_capped_gif_is_retried_smaller_until_it_fits(
 ) -> None:
     """The cap is the profile's promise; the retry is how it is kept."""
     sizes = [9_000_000, 6_000_000, 4_000_000]
-    plans: list[convert.Plan] = []
+    plans: list[recipe.Plan] = []
 
-    async def fake_run(made: convert.Plan, *_: object) -> bytes:
+    async def fake_run(made: recipe.Plan, *_: object) -> bytes:
         plans.append(made)
         return b"x" * sizes[len(plans) - 1]
 

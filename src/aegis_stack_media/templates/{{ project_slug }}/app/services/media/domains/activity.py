@@ -1,6 +1,8 @@
 """What the media service has been doing, for every frontend.
 
-The numbers the charts draw and the strings a job's row reads, computed
+The numbers the charts draw, the strings a job's row reads, and the size
+a conversion is likely to come out at (``estimate``, from what it made
+before), computed
 here once, so the Overseer page and the Flet modal show the same values
 and neither formats a size or a time of its own.
 """
@@ -16,7 +18,8 @@ from app.core.formatting import format_bytes, format_relative_time
 from app.core.time import utcnow
 from app.services.media import queries
 from app.services.media.adapters import profiles
-from app.services.media.domains.convert import KINDS, ONE_FRAME, resolve
+from app.services.media.domains.convert import resolve
+from app.services.media.domains.recipe import KINDS
 from app.services.media.models import MediaJob
 from app.services.media.schemas import (
     DayCount,
@@ -105,7 +108,7 @@ async def estimate(
         return None
     jobs, given, made = done
     profile = await resolve(db, profile_name, end)
-    if profile.kind in ONE_FRAME:
+    if profile.kind in profiles.ONE_FRAME:
         return made // jobs
     guess = int(source_bytes * _share(profile, duration) * made / given)
     return min(guess, profile.max_bytes) if profile.max_bytes else guess

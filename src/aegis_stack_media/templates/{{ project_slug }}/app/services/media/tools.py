@@ -42,7 +42,8 @@ register_tool(
     media,
     description=(
         "Convert a stored object with one of the stack's media profiles "
-        "(gif, audio, image, thumbnail, video); returns the job's id and status"
+        "(an unknown one is refused with the list); returns the job's id "
+        "and status"
     ),
     effect="writes",
 )

@@ -1,39 +1,28 @@
-# 22 — Illiana composes a conversion: `tools.py` and its grant
+# 22 — The agent's tool takes a trim and a size cap
 
-**Filed:** [lbedner/aegis-stack#1868](https://github.com/lbedner/aegis-stack/issues/1868) - tracker #1872
-
-**Repo:** `aegis-stack-media` · **Depends on:** framework ticket 01
+**Repo:** `aegis-stack-media`
 
 ## Why
 
-The second interface in the pitch: "make me a GIF of this from 0:05 to
-0:12 under 5 MB" should be a job spec the agent composes, and the person
-approves. That needs a tool the agent can call, granted and visible, and
-it needs the size/trim overrides ticket 10 adds to the profile.
-
-0.1.0 ships no `tools.py` on purpose (see 01): a registered tool the
-project's own test suite rejects is worse than none.
+"Make me a GIF of this, the last 7 seconds, under 3 MB" should be a job the
+agent composes and the person approves. The `media` tool (`tools.py`,
+granted with `effect="writes"`) queues a conversion of a stored object
+with a profile, and nothing else: no trim, no cap, so the agent can only
+ask for what a profile already says.
 
 ## Scope
 
-Once 01 lands:
-
-- `app/services/media/tools.py`: one `register_tool("media", effect="writes")`
-  taking `{source: storage key, profile: str, start?: float, end?: float,
-  max_bytes?: int}` and returning `{id, status, profile}` — figures, never
-  rows (the `figures.py` rule).
-- The tool creates the row and calls `start_conversion`; it does **not**
-  hold the request open for the conversion.
-- Named in the agent's map (`app/core/ontology/summary.py`) and the prompt
-  so Illiana knows the profiles by name rather than guessing.
-- `EXPECTED_EFFECTS` / the plugin grant from 01 covers it; the Overview
-  shows the tool as the agent's way in.
+- `media(source, profile, end?)`: the job's own trim, the same
+  `MediaJob.end` the page and the CLI set (the first N seconds, or negative
+  for the last N), refused on a still by `profiles.checked` as everywhere
+  else.
+- A per-job size cap (`max_bytes`) and a trim from the middle ("5 to 12
+  seconds") need columns on `media_job` first (a migration); until then
+  the cap is the profile's and a trim is the first or last seconds.
 
 ## Done when
 
-- In a generated project with media and AI: "make me a gif of job 3, 5 to
-  12 seconds, under 3 MB" produces a `MediaJob` row whose profile is the
-  base profile plus the overrides, and a link.
-- The tool refuses an unknown profile with the list of known ones (the
-  agent should not have to guess).
+- In a generated project with media and AI: "make me a gif of job 3, the
+  last 7 seconds" produces a `MediaJob` row with `end=-7` and a link.
+- A trim on a still is refused with the message the page and the CLI give.
 - `patterns check` and the project's `test_tools.py` are green.

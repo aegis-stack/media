@@ -159,8 +159,9 @@ async def confirm_delete(
         "pages/overseer/_confirm.html",
         title=f"Delete this {card['title']}?",
         body=(
-            f"{card['filename']} will be removed from storage. Its line under "
-            "Activity stays. This cannot be undone."
+            f"{card['filename']} will be removed from storage once nothing "
+            "else uses the same file. Its line under Activity stays. This "
+            "cannot be undone."
         ),
         url=card["download"],
         label="Delete",

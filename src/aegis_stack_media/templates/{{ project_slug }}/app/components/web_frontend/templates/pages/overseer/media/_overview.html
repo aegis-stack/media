@@ -26,6 +26,7 @@
        trimming: {{ trimming|tojson|forceescape }},
        preview: '',
        broken: false,
+       get trimmed() { return this.source !== 'image' && this.trimming.includes(this.pick) },
        fits(card) { return card.dataset.takes.split(' ').includes(this.source) },
        estimate() { this.$nextTick(() => $refs.make.dispatchEvent(new Event('estimate'))) },
        length(player) {
@@ -126,7 +127,7 @@
     {% endfor %}
 
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
-      <span x-show="source !== 'image' && trimming.includes(pick)">{{ select("end", trims, blank=whole|capitalize, label="Use") }}</span>
+      <span x-show="trimmed">{{ select("end", trims, blank=whole|capitalize, label="Use", attrs=':disabled="!trimmed"') }}</span>
       <span hx-get="{{ estimate_url }}" hx-trigger="estimate from:#media-make"
             hx-include="#media-make" hx-params="profile,size,duration,end,name"
             hx-target="this" hx-swap="innerHTML"

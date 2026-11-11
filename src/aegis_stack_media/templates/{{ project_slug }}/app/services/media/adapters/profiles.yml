@@ -5,15 +5,10 @@
 # kind which ffmpeg recipe runs, and the numbers how. Add one here and it
 # appears in the Media page, the CLI and the picker with no code change.
 #
-#   kind: gif | audio | image | jpeg | thumbnail | video
+#   kind: which recipe runs (``Kind`` in profiles.py)
 #   takes: what it is offered for (video, image, audio); video when absent
-#   gif:       fps, width, max_bytes (retried smaller until it fits)
-#   audio:     bitrate
-#   image:     at (seconds in), width (none keeps the size)
-#   jpeg:      width (never wider than the source)
-#   thumbnail: at (seconds in), width
-#   video:     crf (lower is better and bigger), width (never wider than the source)
-#   the rest:  start, end (seconds) to trim; one frame has nothing to trim
+#   the settings each kind takes are ``FIELDS`` in profiles.py; any other
+#   is refused by name when this file loads
 
 readme-gif:
   title: GIF for a README
@@ -51,7 +46,6 @@ png:
   description: One frame, full size
   kind: image
   at: 1.0
-  width: 1600
 
 thumb:
   title: Thumbnail
@@ -87,5 +81,4 @@ photo-thumb:
   description: Small preview image
   kind: thumbnail
   takes: [image]
-  at: 0
   width: 640
