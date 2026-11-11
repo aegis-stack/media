@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.time import utcnow
@@ -21,6 +20,7 @@ from app.services.media.adapters.profiles import (
     TRIM_FIELDS,
     TRIMS,
     UnknownProfileError,
+    profile_fields,
 )
 from app.services.media.domains import activity as recent_activity
 from app.services.media.domains import convert
@@ -42,6 +42,7 @@ __all__ = [
     "MediaJob",
     "MediaService",
     "UnknownProfileError",
+    "profile_fields",
 ]
 """Callers outside the service take these from here: the job, the error a
 profile name can raise, which settings each kind of profile uses, and the
@@ -235,9 +236,9 @@ class MediaService:
             for field, value in edits.items()
         }
         try:
-            updated = profiles.Profile.model_validate(settings)
-        except ValidationError as exc:
-            raise ValueError(f"{name}: {profiles.fault(exc)}") from None
+            updated = profiles.checked(settings)
+        except ValueError as exc:
+            raise ValueError(f"{name}: {exc}") from None
 
         for field, value in edits.items():
             setattr(row, field, None if value is None else getattr(updated, field))

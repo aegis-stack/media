@@ -1,31 +1,28 @@
-# 10 — The remaining verbs: image formats, resize, trim in the UI
+# 10 — The remaining verbs: WebP out, quality, height, a crop
 
 **Repo:** `aegis-stack-media`
 
 ## Why
 
-0.1.0 ships five kinds — `gif`, `image`, `audio`, `thumbnail`, `video` — and
-every one of them is a *whole file*. The conversions that actually get done
-by hand also need: a target format (JPEG/WebP instead of PNG), a resize that
-can also shrink, and a trim you can see (start/end) rather than write in the
-YAML.
+The kinds a project has (`profiles.Kind`) cover a GIF, a video, the audio,
+a frame, a thumbnail and a smaller JPEG, and the page trims the first or
+last seconds. The conversions still done by hand: a WebP out, a quality
+for the lossy formats, a height as the other half of `width`, and a square
+crop (an avatar).
 
 ## Scope
 
-- `adapters/profiles.py`: `Profile` gains `format` (`png`/`jpeg`/`webp` for
-  `image`/`thumbnail`), `quality` for the lossy formats, and `height` as the
-  other half of `width`.
-- `domains/convert.py`: the argv per format; the `KINDS` table becomes a
-  per-(kind, format) suffix/content-type lookup instead of one row per kind.
-- The Convert section: optional `start`/`end` fields (seconds), parsed and
-  passed as overrides, so a trim does not need a new profile.
-- A `trim` kind is **not** needed if overrides work: prefer the override.
-- Profiles shipped: `jpg`, `webp`, `square-avatar` (a crop, via
+- `adapters/profiles.py`: `Profile` gains `format` (`png`/`jpeg`/`webp`
+  for `image`/`thumbnail`), `quality` for the lossy formats, and `height`;
+  each in `FIELDS` for the kinds that take it.
+- `domains/recipe.py`: the argv per format; `KINDS` becomes a
+  per-(kind, format) suffix/content-type lookup instead of one row per
+  kind.
+- Profiles shipped: `webp`, `square-avatar` (a crop, via
   `scale=..:force_original_aspect_ratio=increase,crop=..`).
 
 ## Done when
 
-- `Plan` tests cover each format and each override.
-- A real conversion test: PNG → JPEG, and a GIF trimmed to 1s is shorter
-  than the untrimmed one (compare `output_bytes`).
+- `Plan` tests cover each format.
+- A real conversion test: PNG → WebP, and the avatar is square.
 - The Convert form works with the JavaScript off (a plain form post).

@@ -7,31 +7,8 @@ the result both in the project's object store. Every result is a row
 with its profile, its source key and a link, so nothing ends up named
 ``final_v2_actual.gif`` on a desktop.
 
-Design notes:
-
-- ``required_components=["database", "storage"]`` — every result is a row
-  and the bytes are the point. The store is content-addressed, so the same
-  input uploaded twice costs one object, and a result survives the
-  container it was made in.
-- ``recommended_components=["worker"]`` — with a worker, a conversion
-  runs on the plugin's own ``media`` queue in its own ``worker-media``
-  process, so a three-minute transcode never holds a slot a request
-  needs. Without one, ``jobs.start_conversion`` runs it in-process.
-- ``worker_queues=[WorkerQueueWiring("media", concurrency=1, memory="1G")]``
-  — one process per queue, one ffmpeg run at a time: its concurrency is a
-  CPU and memory decision, not a request-latency one, and the project
-  default (10) put ten conversions in a worker allowed half a CPU. A 1080p
-  encode peaks at about 520 MB, so the stack's 512M worker is raised to 1G.
-- ``migrations`` — one table, ``media.media_job``, in the plugin's own
-  Postgres schema (unqualified on SQLite, which has no schemas).
-- ffmpeg itself is a pip dependency (``imageio-ffmpeg`` ships a static
-  build), not an apt line: the plugin installs into any stack without
-  the project's Dockerfile changing, and the same binary is present on a
-  laptop, in the worker container and on a VPS.
-- The agent surface (``tools.py``) is deliberately absent from 0.1.0: a
-  plugin's tool cannot yet declare its expected effect to the project's
-  ``tests/core/test_tools.py`` bookkeeping, nor be granted to the seeded
-  agent. Tracked as a framework issue, not shipped broken here.
+What it brings and how it connects: the README. Each field below says
+its own reason beside it.
 """
 
 from aegis.core.file_manifest import FileManifest
@@ -126,6 +103,10 @@ def get_spec() -> PluginSpec:
         # work needs a worker to run on when the stack has one.
         required_components=["database", "storage"],
         recommended_components=["worker"],
+        # One ffmpeg run at a time, in its own process: concurrency here is a
+        # CPU and memory decision, and the project default (10) put ten
+        # conversions in a worker allowed half a CPU. A 1080p encode peaks at
+        # about 520 MB, so the stack's 512M worker is raised to 1G.
         worker_queues=[WorkerQueueWiring("media", concurrency=1, memory="1G")],
         # A static ffmpeg build, so no Dockerfile apt line and no
         # "works on my laptop" divergence. The floor is 0.5 (the API this

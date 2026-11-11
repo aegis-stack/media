@@ -21,6 +21,7 @@ from app.components.database.models import StoredObject
 from app.components.database.stored import store
 from app.components.web_frontend import overseer_media
 from app.core.storage import FilesystemStorage
+from app.services.media.adapters import profiles
 from app.services.media.models import MediaJob
 from tests.services._media import OUTPUT, SOURCE, add_jobs
 from tests.web.overseer import sent_events, sign_in, status_with
@@ -199,16 +200,18 @@ async def test_the_overview_offers_results_not_profile_names(
     ]
     assert ">Whole clip</option>" in make and ">First 5 s</option>" in make
     assert re.search(r'<option value="-20"\s*>Last 20 s</option>', make)
-    # Offered only for a choice that trims: a screenshot takes one frame.
+    # Offered only for a choice that trims: a screenshot takes one frame,
+    # and the hidden select is disabled, so it is not sent (it is refused).
     assert "mp4" in body["trimming"] and "png" not in body["trimming"]
-    assert "trimming.includes(pick)" in make
+    assert "this.trimming.includes(this.pick)" in make
+    assert re.search(r'<select name="end" :disabled="!trimmed"', make)
     assert 'data-takes="video"' in make and 'data-takes="image"' in make
     assert body["page_titled"] and body["section_subtitle"] is None
     assert '<img :src="preview"' in make and '<video :src="preview"' in make
     # A GIF moves: offered what a video is, and shown as the picture it is.
     assert "file.type === 'image/gif' || animated" in make
     assert "'VP8X'" in make, "an animated WebP moves too"
-    assert overseer_media.profile_fields("video", ("video",)) == (
+    assert profiles.profile_fields("video", ("video",)) == (
         "crf",
         "width",
         "start",
@@ -373,14 +376,14 @@ def test_the_whole_clip_is_an_empty_end_not_a_422(
 
 def test_a_still_is_not_offered_settings_that_need_a_length() -> None:
     """A picture has one frame: no "at" to seek to, no start or end."""
-    assert overseer_media.profile_fields("thumbnail", ("image",)) == ("width",)
+    assert profiles.profile_fields("thumbnail", ("image",)) == ("width",)
 
 
 def test_a_frame_is_picked_by_when_and_one_frame_has_no_trim() -> None:
     """ "Frame from 1 s in", not "at 1"; a single frame has nothing to trim."""
-    assert overseer_media.profile_fields("thumbnail", ("video",)) == ("at", "width")
-    assert overseer_media.profile_fields("image", ("video",)) == ("at", "width")
-    assert overseer_media.profile_fields("gif", ("video",))[-2:] == ("start", "end")
+    assert profiles.profile_fields("thumbnail", ("video",)) == ("at", "width")
+    assert profiles.profile_fields("image", ("video",)) == ("at", "width")
+    assert profiles.profile_fields("gif", ("video",))[-2:] == ("start", "end")
     choice = overseer_media.field_choices("at", {"at": 1.0})
     assert (choice["label"], choice["shown"]) == ("frame from", "1 s in")
 

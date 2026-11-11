@@ -41,15 +41,8 @@ OWNERS = {
         "profile_totals",
         "daily_counts",
     },
-    "domains/convert.py": {
-        "Plan",
-        "plan",
-        "convert",
-        "submit",
-        "run",
-        "fail",
-        "source_suffix",
-    },
+    "domains/recipe.py": {"Plan", "plan", "window", "source_suffix"},
+    "domains/convert.py": {"convert", "submit", "run", "fail"},
     "domains/activity.py": {"activity", "job_row"},
     "adapters/ffmpeg.py": {"FfmpegError", "binary", "version", "convert"},
     "adapters/profiles.py": {

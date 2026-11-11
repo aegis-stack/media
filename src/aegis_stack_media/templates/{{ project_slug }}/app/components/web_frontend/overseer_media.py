@@ -19,11 +19,11 @@ from app.services.media import SERVICE_NAME
 from app.services.media.schemas import MediaActivity, ProfileSettings
 from app.services.media.service import (
     CHARTS,
-    FIELDS,
     TRIM_FIELDS,
     TRIMS,
     MediaJob,
     MediaService,
+    profile_fields,
 )
 from app.services.system.models import ComponentStatus
 
@@ -75,13 +75,6 @@ KIND_ICONS = {
 def kind_icon(kind: str) -> str:
     """The picture beside a choice and on a result with no preview."""
     return KIND_ICONS.get(kind, "photo")
-
-
-def profile_fields(kind: str, takes: tuple[str, ...]) -> tuple[str, ...]:
-    """The inputs a profile of this kind offers. A still has one frame, so
-    a profile only for stills has no ``at`` (a seek past it makes nothing)."""
-    fields = FIELDS.get(kind, ())
-    return tuple(f for f in fields if f != "at") if takes == ("image",) else fields
 
 
 # The values a setting is picked from, so tuning a profile is choosing, not
